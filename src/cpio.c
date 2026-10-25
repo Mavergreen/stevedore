@@ -1,9 +1,14 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "cpio.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define HDR 76
 #define TRAILER "TRAILER!!!"
@@ -164,4 +169,138 @@ oom:
 	fputs("stevedore: out of memory\n", stderr);
 	out->len = start;
 	return -1;
+}
+
+static int
+unoct(const unsigned char *p, int width, unsigned long long *v)
+{
+	*v = 0;
+	while (width-- > 0) {
+		if (*p < '0' || *p > '7')
+			return -1;
+		*v = *v << 3 | (unsigned long long)(*p++ - '0');
+	}
+	return 0;
+}
+
+static int
+safe_relative(const char *s)
+{
+	const char *c = s, *e;
+
+	if (*s == '\0' || *s == '/')
+		return 0;
+	for (;;) {
+		e = strchr(c, '/');
+		if (e == c || (e ? e - c : (long)strlen(c)) == 0)
+			return 0;
+		if ((c[0] == '.' && (c[1] == '/' || c[1] == '\0'))
+		    || (c[0] == '.' && c[1] == '.' && (c[2] == '/' || c[2] == '\0')))
+			return 0;
+		if (e == NULL)
+			return 1;
+		c = e + 1;
+	}
+}
+
+static int
+write_all(int fd, const unsigned char *p, size_t n)
+{
+	ssize_t w;
+
+	while (n > 0) {
+		if ((w = write(fd, p, n)) < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+		p += w;
+		n -= (size_t)w;
+	}
+	return 0;
+}
+
+int
+fp_cpio_odc_extract(const unsigned char *p, size_t n, const char *dir)
+{
+	unsigned long long mode, namesize, filesize;
+	size_t at = 0, dl = strlen(dir), cap = 0, nm = 0, i;
+	struct { char *path; mode_t mode; } *made = NULL, *grown;
+	const char *name;
+	char *path = NULL;
+	int rc = 0, fd;
+
+	while (rc == 0) {
+		if (n - at < HDR || memcmp(p + at, "070707", 6) != 0 || unoct(p + at + 18, 6, &mode) != 0
+		    || unoct(p + at + 59, 6, &namesize) != 0 || unoct(p + at + 65, 11, &filesize) != 0
+		    || namesize == 0 || namesize > n - at - HDR || filesize > n - at - HDR - namesize
+		    || p[at + HDR + namesize - 1] != '\0') {
+			rc = refuse("malformed cpio archive", dir);
+			break;
+		}
+		name = (const char *)p + at + HDR;
+		at += HDR + (size_t)namesize;
+		if (strcmp(name, TRAILER) == 0)
+			break;
+		if (name[0] == '.' && name[1] == '/')
+			name += 2;
+		else if (strcmp(name, ".") == 0)
+			name = "";
+		if (*name != '\0' && !safe_relative(name)) {
+			rc = refuse("unsafe name in cpio archive", name);
+			break;
+		}
+		free(path);
+		if ((path = malloc(dl + strlen(name) + 2)) == NULL) {
+			fputs("stevedore: out of memory\n", stderr);
+			rc = -1;
+			break;
+		}
+		snprintf(path, dl + strlen(name) + 2, *name ? "%s/%s" : "%s", dir, name);
+		if ((mode & 0170000) == 040000) {
+			if (*name != '\0' && mkdir(path, 0700) != 0) {
+				fprintf(stderr, "stevedore: %s: %s\n", path, strerror(errno));
+				rc = -1;
+			}
+		} else if ((mode & 0170000) == 0100000 && *name != '\0') {
+			if ((fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0600)) < 0
+			    || write_all(fd, p + at, (size_t)filesize) != 0) {
+				fprintf(stderr, "stevedore: %s: %s\n", path, strerror(errno));
+				rc = -1;
+			}
+			if (fd >= 0 && close(fd) != 0 && rc == 0) {
+				fprintf(stderr, "stevedore: %s: %s\n", path, strerror(errno));
+				rc = -1;
+			}
+		} else if ((mode & 0170000) == 0120000) {
+			rc = refuse("symlink in cpio archive", name);
+		} else {
+			rc = refuse("unsupported file type in cpio archive", *name ? name : ".");
+		}
+		at += (size_t)filesize;
+		if (rc != 0)
+			break;
+		if (nm == cap) {
+			cap = cap ? cap * 2 : 16;
+			if ((grown = realloc(made, cap * sizeof *made)) == NULL) {
+				fputs("stevedore: out of memory\n", stderr);
+				rc = -1;
+				break;
+			}
+			made = grown;
+		}
+		made[nm].path = path;
+		made[nm++].mode = (mode_t)(mode & 01777);
+		path = NULL;
+	}
+	free(path);
+	for (i = nm; rc == 0 && i-- > 0;)
+		if (chmod(made[i].path, made[i].mode) != 0) {
+			fprintf(stderr, "stevedore: %s: %s\n", made[i].path, strerror(errno));
+			rc = -1;
+		}
+	for (i = 0; i < nm; i++)
+		free(made[i].path);
+	free(made);
+	return rc;
 }

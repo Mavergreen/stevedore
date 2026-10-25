@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xar>
+ <toc>
+  <checksum style="sha1">
+   <size>20</size>
+   <offset>0</offset>
+  </checksum>
+  <creation-time>2023-11-14T22:13:20</creation-time>
+  <file id="1">
+   <name>base.pkg</name>
+   <type>directory</type>
+   <mode>0700</mode>
+   <uid>0</uid>
+   <user>root</user>
+   <gid>0</gid>
+   <group>wheel</group>
+   <atime>2023-11-14T22:13:20Z</atime>
+   <mtime>2023-11-14T22:13:20Z</mtime>
+   <ctime>2023-11-14T22:13:20Z</ctime>
+   <file id="2">
+    <name>Bom</name>
+    <type>file</type>
+    <mode>0644</mode>
+    <uid>0</uid>
+    <user>root</user>
+    <gid>0</gid>
+    <group>wheel</group>
+    <atime>2023-11-14T22:13:20Z</atime>
+    <mtime>2023-11-14T22:13:20Z</mtime>
+    <ctime>2023-11-14T22:13:20Z</ctime>
+    <data>
+     <archived-checksum style="sha1">908b0492502ee1ba0e8b49fb237c21cca221ee15</archived-checksum>
+     <extracted-checksum style="sha1">d5102c67073b8fae84a58609a6d978826f509792</extracted-checksum>
+     <encoding style="application/x-gzip"/>
+     <size>11590</size>
+     <offset>20</offset>
+     <length>775</length>
+    </data>
+   </file>
+   <file id="3">
+    <name>Payload</name>
+    <type>file</type>
+    <mode>0644</mode>
+    <uid>0</uid>
+    <user>root</user>
+    <gid>0</gid>
+    <group>wheel</group>
+    <atime>2023-11-14T22:13:20Z</atime>
+    <mtime>2023-11-14T22:13:20Z</mtime>
+    <ctime>2023-11-14T22:13:20Z</ctime>
+    <data>
+     <archived-checksum style="sha1">cfdd3670e04b4f43b20724285d7108f2a025a8ed</archived-checksum>
+     <extracted-checksum style="sha1">cfdd3670e04b4f43b20724285d7108f2a025a8ed</extracted-checksum>
+     <size>381</size>
+     <offset>795</offset>
+     <encoding style="application/octet-stream"/>
+     <length>381</length>
+    </data>
+   </file>
+   <file id="4">
+    <name>Scripts</name>
+    <type>file</type>
+    <mode>0644</mode>
+    <uid>0</uid>
+    <user>root</user>
+    <gid>0</gid>
+    <group>wheel</group>
+    <atime>2023-11-14T22:13:20Z</atime>
+    <mtime>2023-11-14T22:13:20Z</mtime>
+    <ctime>2023-11-14T22:13:20Z</ctime>
+    <data>
+     <archived-checksum style="sha1">d33d7f1879f6d42f1608f1720dd3bf51ef2d165c</archived-checksum>
+     <extracted-checksum style="sha1">d33d7f1879f6d42f1608f1720dd3bf51ef2d165c</extracted-checksum>
+     <size>174</size>
+     <offset>1176</offset>
+     <encoding style="application/octet-stream"/>
+     <length>174</length>
+    </data>
+   </file>
+   <file id="5">
+    <name>PackageInfo</name>
+    <type>file</type>
+    <mode>0644</mode>
+    <uid>0</uid>
+    <user>root</user>
+    <gid>0</gid>
+    <group>wheel</group>
+    <atime>2023-11-14T22:13:20Z</atime>
+    <mtime>2023-11-14T22:13:20Z</mtime>
+    <ctime>2023-11-14T22:13:20Z</ctime>
+    <data>
+     <archived-checksum style="sha1">f102058e8885aa37575c216f722a282267ed83c1</archived-checksum>
+     <extracted-checksum style="sha1">4b106076be9b8e7a787a4dda5dba37f627013337</extracted-checksum>
+     <encoding style="application/x-gzip"/>
+     <size>86</size>
+     <offset>1350</offset>
+     <length>85</length>
+    </data>
+   </file>
+   <file id="6">
+    <name>empty</name>
+    <type>file</type>
+    <mode>0644</mode>
+    <uid>0</uid>
+    <user>root</user>
+    <gid>0</gid>
+    <group>wheel</group>
+    <atime>2023-11-14T22:13:20Z</atime>
+    <mtime>2023-11-14T22:13:20Z</mtime>
+    <ctime>2023-11-14T22:13:20Z</ctime>
+    <data>
+     <archived-checksum style="sha1">da39a3ee5e6b4b0d3255bfef95601890afd80709</archived-checksum>
+     <extracted-checksum style="sha1">da39a3ee5e6b4b0d3255bfef95601890afd80709</extracted-checksum>
+     <size>0</size>
+     <offset>1435</offset>
+     <encoding style="application/octet-stream"/>
+     <length>0</length>
+    </data>
+   </file>
+  </file>
+  <file id="7">
+   <name>sp ace &amp; &lt;жук&gt;.pkg</name>
+   <type>directory</type>
+   <mode>0700</mode>
+   <uid>0</uid>
+   <user>root</user>
+   <gid>0</gid>
+   <group>wheel</group>
+   <atime>2023-11-14T22:13:20Z</atime>
+   <mtime>2023-11-14T22:13:20Z</mtime>
+   <ctime>2023-11-14T22:13:20Z</ctime>
+   <file id="8">
+    <name>zero</name>
+    <type>file</type>
+    <mode>0644</mode>
+    <uid>0</uid>
+    <user>root</user>
+    <gid>0</gid>
+    <group>wheel</group>
+    <atime>2023-11-14T22:13:20Z</atime>
+    <mtime>2023-11-14T22:13:20Z</mtime>
+    <ctime>2023-11-14T22:13:20Z</ctime>
+    <data>
+     <archived-checksum style="sha1">9a39f2dd186749fea11b84e53cfa77194eed88d3</archived-checksum>
+     <extracted-checksum style="sha1">da39a3ee5e6b4b0d3255bfef95601890afd80709</extracted-checksum>
+     <encoding style="application/x-gzip"/>
+     <size>0</size>
+     <offset>1435</offset>
+     <length>8</length>
+    </data>
+   </file>
+   <file id="9">
+    <name>PackageInfo</name>
+    <type>file</type>
+    <mode>0644</mode>
+    <uid>0</uid>
+    <user>root</user>
+    <gid>0</gid>
+    <group>wheel</group>
+    <atime>2023-11-14T22:13:20Z</atime>
+    <mtime>2023-11-14T22:13:20Z</mtime>
+    <ctime>2023-11-14T22:13:20Z</ctime>
+    <data>
+     <archived-checksum style="sha1">1f73933e9ed9ce1ce716561c849c07103ecf025c</archived-checksum>
+     <extracted-checksum style="sha1">b2aeb400f6c2a8672a1cf4d77e772bb7c04160ca</extracted-checksum>
+     <encoding style="application/x-gzip"/>
+     <size>34</size>
+     <offset>1443</offset>
+     <length>42</length>
+    </data>
+   </file>
+  </file>
+  <file id="10">
+   <name>Distribution</name>
+   <type>file</type>
+   <mode>0644</mode>
+   <uid>0</uid>
+   <user>root</user>
+   <gid>0</gid>
+   <group>wheel</group>
+   <atime>2023-11-14T22:13:20Z</atime>
+   <mtime>2023-11-14T22:13:20Z</mtime>
+   <ctime>2023-11-14T22:13:20Z</ctime>
+   <data>
+    <archived-checksum style="sha1">e162005427a379fcd55c8ff0dbd4498bfff0ca84</archived-checksum>
+    <extracted-checksum style="sha1">c6ec950ace80f9e5d08e02574857aa9de31c486b</extracted-checksum>
+    <encoding style="application/x-gzip"/>
+    <size>82</size>
+    <offset>1485</offset>
+    <length>84</length>
+   </data>
+  </file>
+ </toc>
+</xar>

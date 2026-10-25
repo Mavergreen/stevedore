@@ -97,3 +97,45 @@ fp_zlib_check(void)
 {
 	return strcmp(zlibVersion(), FP_ZLIB_PINNED) == 0 ? 0 : -1;
 }
+
+int
+fp_gunzip(const unsigned char *in, size_t n, size_t cap, struct fp_buf *out)
+{
+	z_stream s;
+	size_t start = out->len, chunk;
+	int zr = Z_OK, over = 0;
+
+	memset(&s, 0, sizeof s);
+	if (inflateInit2(&s, MAX_WBITS + 16) != Z_OK)
+		return -1;
+	s.next_in = (unsigned char *)in;
+	while (zr == Z_OK) {
+		chunk = n > UINT_MAX ? UINT_MAX : n;
+		if (s.avail_in == 0) {
+			s.avail_in = (uInt)chunk;
+			n -= chunk;
+		}
+		if (fp_buf_reserve(out, 65536) != 0) {
+			zr = Z_MEM_ERROR;
+			break;
+		}
+		s.next_out = out->p + out->len;
+		s.avail_out = 65536;
+		zr = inflate(&s, Z_NO_FLUSH);
+		out->len += 65536 - s.avail_out;
+		if (out->len - start > cap) {
+			zr = Z_DATA_ERROR;
+			over = 1;
+			break;
+		}
+		if (zr == Z_BUF_ERROR && s.avail_in == 0 && n == 0)
+			break;
+		if (zr == Z_BUF_ERROR)
+			zr = Z_OK;
+	}
+	inflateEnd(&s);
+	if (zr == Z_STREAM_END && s.avail_in == 0 && n == 0)
+		return 0;
+	out->len = start;
+	return zr == Z_MEM_ERROR ? -1 : over ? -3 : -2;
+}

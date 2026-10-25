@@ -7,6 +7,7 @@
 
 int fp_gzip(const unsigned char *in, size_t n, struct fp_buf *out);
 int fp_zlib(const unsigned char *in, size_t n, struct fp_buf *out);
+int fp_gunzip(const unsigned char *in, size_t n, size_t cap, struct fp_buf *out);
 int fp_zlib_check(void);
 const char *fp_zlib_pinned(void);
 
