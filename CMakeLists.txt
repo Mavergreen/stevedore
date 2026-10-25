@@ -41,7 +41,7 @@ set_target_properties(stevedore_zlib PROPERTIES C_EXTENSIONS ON)
 
 configure_file(src/zlib_pin.h.in "${CMAKE_BINARY_DIR}/generated/zlib_pin.h" @ONLY)
 
-set(STEVEDORE_SOURCES src/main.c src/buf.c src/gz.c src/tree.c src/cpio.c)
+set(STEVEDORE_SOURCES src/main.c src/buf.c src/gz.c src/tree.c src/cpio.c src/bom.c)
 
 add_executable(stevedore ${STEVEDORE_SOURCES})
 target_include_directories(stevedore PRIVATE src "${CMAKE_BINARY_DIR}/generated")

@@ -4,10 +4,12 @@
 #          name with a space and UTF-8, a 0-byte file, an executable, a 0700 directory, and names whose
 #          byte order differs from their directory-walk order (a, a-b, a/b, B). Every mode and mtime is
 #          set explicitly (mtime 2023-01-01 12:00 UTC), so the checkout does not matter. A symlink's own mode is host-dependent (the umask at ln -s on macOS, 0777 on Linux) and the payload writes 0755 for it regardless.
-#          Regenerate tests/fixtures/trees/basic.payload.sha256 with:
+#          Regenerate tests/fixtures/trees/basic.payload.sha256 and basic.bom.sha256 with:
 #            T=$(mktemp -d); mkdir $T/tree; . tests/fixtures/trees/basic.sh; basic_tree $T/tree
 #            stevedore payload --root $T/tree --mtime 1700000000 --out $T/p
 #            sha256sum $T/p | cut -c1-64 > tests/fixtures/trees/basic.payload.sha256
+#            stevedore bom --root $T/tree --mtime 1700000000 --out $T/b
+#            sha256sum $T/b | cut -c1-64 > tests/fixtures/trees/basic.bom.sha256
 basic_tree() {
   (
     cd "$1"
