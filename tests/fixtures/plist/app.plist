@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleShortVersionString</key>
+	<string>2.4.1</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.mavergreen.example</string>
+	<key>CFBundleExecutable</key>
+	<string>Example</string>
+	<key>CFBundleVersion</key>
+	<string>241</string>
+	<key>CFBundleName</key>
+	<string>Example</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.9</string>
+	<key>SUFeedURL</key>
+	<string>https://mavergreen.github.io/example/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>pfIShU4dEXqPd5ObYNfDBiQWcXozk7estwzTnF9BamQ=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 The Mavergreen authors</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>LSUIElement</key>
+	<false/>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Example Document</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>exd</string>
+				<string>exdoc</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+		</dict>
+	</array>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+</dict>
+</plist>

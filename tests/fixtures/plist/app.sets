@@ -1,0 +1,9 @@
+CFBundleVersion string 242
+CFBundleShortVersionString string 2.4.2
+SUEnableAutomaticChecks bool false
+SUScheduledCheckInterval integer 3600
+Ratio real 0.5
+NewKey string hello  world: x
+CFBundleDocumentTypes:0:CFBundleTypeRole string Viewer
+CFBundleDocumentTypes:0:LSHandlerRank string Owner
+CFBundleDocumentTypes:0:CFBundleTypeExtensions:2 string exd3

@@ -1,0 +1,10 @@
+identifier
+product
+version
+line
+appcast
+replaces:/usr/local/bin/example
+outside:0
+outside:1
+outside:2
+generated:0

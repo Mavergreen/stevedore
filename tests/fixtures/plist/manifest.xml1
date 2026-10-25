@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>appcast</key>
+	<string>https://mavergreen.github.io/example/appcast.xml</string>
+	<key>exports-exclude</key>
+	<array/>
+	<key>generated</key>
+	<array/>
+	<key>group</key>
+	<string>example</string>
+	<key>identifier</key>
+	<string>org.mavergreen.example</string>
+	<key>line</key>
+	<string></string>
+	<key>name</key>
+	<string>Example</string>
+	<key>outside</key>
+	<array>
+		<string>Applications/Example.app</string>
+		<string>Library/LaunchAgents/org.mavergreen.example.plist</string>
+	</array>
+	<key>product</key>
+	<string>example</string>
+	<key>replaces</key>
+	<dict>
+		<key>/usr/local/bin/example</key>
+		<string>usr/local/mavergreen/bin/example</string>
+	</dict>
+	<key>version</key>
+	<string>1.2.3</string>
+</dict>
+</plist>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>exd</string>
+				<string>exdoc</string>
+				<string>exd3</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Example Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+		</dict>
+	</array>
+	<key>CFBundleExecutable</key>
+	<string>Example</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.mavergreen.example</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Example</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>2.4.2</string>
+	<key>CFBundleVersion</key>
+	<string>242</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.9</string>
+	<key>LSUIElement</key>
+	<false/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 The Mavergreen authors</string>
+	<key>NewKey</key>
+	<string>hello  world: x</string>
+	<key>Ratio</key>
+	<real>0.5</real>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>https://mavergreen.github.io/example/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>pfIShU4dEXqPd5ObYNfDBiQWcXozk7estwzTnF9BamQ=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>3600</integer>
+</dict>
+</plist>

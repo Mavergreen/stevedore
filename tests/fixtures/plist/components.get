@@ -1,0 +1,8 @@
+rc=0
+Applications/Example.app
+rc=0
+true
+rc=1
+rc=0
+Applications/Example.app/Contents/Frameworks/Sparkle.framework
+rc=1
