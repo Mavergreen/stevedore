@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<pkg-info overwrite-permissions="true" relocatable="false" identifier="dev.mavergreen.stevedore-test.bundles" postinstall-action="none" version="1.0" format-version="2" generator-version="stevedore-0-golden" install-location="/Library/Stevedore Test/bundles" auth="root">
+    <payload numberOfFiles="45" installKBytes="23"/>
+    <bundle path="./Library/Application Support/Mavergreen/t-updater.app" id="org.mavergreen.example" CFBundleShortVersionString="2.4.1" CFBundleVersion="241"/>
+    <bundle path="./Library/Application Support/Mavergreen/t-updater.app/Contents/Frameworks/Sparkle.framework" id="org.sparkle-project.Sparkle" CFBundleShortVersionString="1.27.3" CFBundleVersion="1.108"/>
+    <bundle path="./Library/Application Support/Mavergreen/t-updater.app/Contents/Frameworks/Sparkle.framework/Versions/A/Resources/Autoupdate.app" id="org.sparkle-project.Sparkle.Autoupdate" CFBundleShortVersionString="1.27.3" CFBundleVersion="1.108"/>
+    <bundle path="./Library/Flat.bundle" id="dev.mavergreen.test.flat"/>
+    <bundle path="./Library/Frameworks/Old.framework" id="dev.mavergreen.test.old" CFBundleShortVersionString="2"/>
+    <bundle path="./Library/Plug-ins/T.plugin" id="dev.mavergreen.test.plugin" CFBundleVersion="7.0.1" SourceVersion="70001000000000" BuildVersion="3"/>
+    <bundle path="./Library/Sp&amp;c &lt;x>.bundle" id="a&amp;b&lt;c>&quot;d'é" CFBundleVersion="1&amp;&quot;2"/>
+    <bundle-version/>
+    <upgrade-bundle>
+        <bundle id="org.mavergreen.example"/>
+        <bundle id="dev.mavergreen.test.flat"/>
+        <bundle id="dev.mavergreen.test.old"/>
+        <bundle id="dev.mavergreen.test.plugin"/>
+        <bundle id="a&amp;b&lt;c>&quot;d'é"/>
+    </upgrade-bundle>
+    <update-bundle/>
+    <atomic-update-bundle/>
+    <strict-identifier>
+        <bundle id="org.mavergreen.example"/>
+        <bundle id="org.sparkle-project.Sparkle.Autoupdate"/>
+    </strict-identifier>
+    <relocate/>
+</pkg-info>

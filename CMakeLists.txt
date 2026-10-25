@@ -41,16 +41,36 @@ set_target_properties(stevedore_zlib PROPERTIES C_EXTENSIONS ON)
 
 configure_file(src/zlib_pin.h.in "${CMAKE_BINARY_DIR}/generated/zlib_pin.h" @ONLY)
 
-set(STEVEDORE_SOURCES src/main.c src/buf.c src/gz.c src/tree.c src/cpio.c src/bom.c src/plist.c src/sha1.c src/xar.c)
+set(STEVEDORE_VERSION_FILE "${CMAKE_SOURCE_DIR}/UPSTREAM_VERSION")
+if(EXISTS "${CMAKE_SOURCE_DIR}/VERSION")
+  set(STEVEDORE_VERSION_FILE "${CMAKE_SOURCE_DIR}/VERSION")
+endif()
+file(STRINGS "${STEVEDORE_VERSION_FILE}" STEVEDORE_VERSION LIMIT_COUNT 1)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${STEVEDORE_VERSION_FILE}")
+
+set(STEVEDORE_SOURCES src/main.c src/buf.c src/cli.c src/gz.c src/tree.c src/cpio.c src/bom.c src/plist.c
+  src/sha1.c src/xar.c src/component.c)
 
 add_executable(stevedore ${STEVEDORE_SOURCES})
 target_include_directories(stevedore PRIVATE src "${CMAKE_BINARY_DIR}/generated")
+target_compile_definitions(stevedore PRIVATE STEVEDORE_VERSION="${STEVEDORE_VERSION}")
 target_link_libraries(stevedore PRIVATE stevedore_zlib)
+
+add_executable(stevedore-golden ${STEVEDORE_SOURCES})
+target_include_directories(stevedore-golden PRIVATE src "${CMAKE_BINARY_DIR}/generated")
+target_compile_definitions(stevedore-golden PRIVATE STEVEDORE_VERSION="0-golden")
+target_link_libraries(stevedore-golden PRIVATE stevedore_zlib)
 
 add_executable(stevedore-pin-mismatch ${STEVEDORE_SOURCES})
 target_include_directories(stevedore-pin-mismatch PRIVATE src "${CMAKE_BINARY_DIR}/generated")
-target_compile_definitions(stevedore-pin-mismatch PRIVATE FP_ZLIB_PINNED="0.0.0-not-the-pin")
+target_compile_definitions(stevedore-pin-mismatch PRIVATE FP_ZLIB_PINNED="0.0.0-not-the-pin" STEVEDORE_VERSION="0-pin-mismatch")
 target_link_libraries(stevedore-pin-mismatch PRIVATE stevedore_zlib)
+
+add_executable(stevedore-component-limits tests/component-limits.c src/buf.c src/cli.c src/gz.c src/tree.c src/cpio.c
+  src/bom.c src/plist.c src/sha1.c src/xar.c)
+target_include_directories(stevedore-component-limits PRIVATE src "${CMAKE_BINARY_DIR}/generated")
+target_compile_definitions(stevedore-component-limits PRIVATE STEVEDORE_VERSION="0-limits")
+target_link_libraries(stevedore-component-limits PRIVATE stevedore_zlib)
 
 add_executable(stevedore-cpio-limits tests/cpio-limits.c src/buf.c src/tree.c src/cpio.c)
 target_include_directories(stevedore-cpio-limits PRIVATE src)

@@ -131,31 +131,33 @@ read_file(const struct fp_tree *t, const struct fp_entry *e, struct fp_buf *out)
 }
 
 int
-fp_cpio_odc(const struct fp_tree *t, long mtime, struct fp_buf *out)
+fp_cpio_odc(const struct fp_tree *t, long mtime, struct fp_buf *out, size_t *data_at)
 {
-	size_t start = out->len, i;
+	size_t start = out->len, i, j, *order;
 	unsigned long long total;
 	int rc = validate(t, mtime, &total);
 
 	if (rc != 0)
 		return rc;
-	if (total > (size_t)-1 || fp_buf_reserve(out, (size_t)total) != 0) {
+	if (total > (size_t)-1 || fp_buf_reserve(out, (size_t)total) != 0 || (order = fp_tree_dfs(t)) == NULL) {
 		fputs("stevedore: out of memory\n", stderr);
 		return -1;
 	}
-	for (i = 0; i < t->n; i++) {
-		const struct fp_entry *e = &t->e[i];
+	for (j = 0; j < t->n; j++) {
+		const struct fp_entry *e = &t->e[i = order[j]];
 		unsigned long long type = e->mode & 0170000;
 
-		if (header(out, i + 1, e->mode, nlink_of(e), (unsigned long long)mtime, e->path,
+		if (header(out, j + 1, e->mode, nlink_of(e), (unsigned long long)mtime, e->path,
 		    type == 040000 ? 0 : e->size) != 0)
 			goto oom;
+		if (data_at != NULL)
+			data_at[i] = out->len;
 		if (type == 0120000) {
 			if (fp_buf_append(out, e->link_target, (size_t)e->size) != 0)
 				goto oom;
 		} else if (type == 0100000 && e->size > 0 && read_file(t, e, out) != 0) {
-			out->len = start;
-			return -1;
+			rc = -1;
+			goto fail;
 		}
 	}
 	if (header(out, t->n + 1, 0, 1, 0, TRAILER, 0) != 0)
@@ -164,11 +166,15 @@ fp_cpio_odc(const struct fp_tree *t, long mtime, struct fp_buf *out)
 		goto oom;
 	while ((out->len - start) % BLOCK != 0)
 		out->p[out->len++] = 0;
+	free(order);
 	return 0;
 oom:
 	fputs("stevedore: out of memory\n", stderr);
+	rc = -1;
+fail:
+	free(order);
 	out->len = start;
-	return -1;
+	return rc;
 }
 
 static int

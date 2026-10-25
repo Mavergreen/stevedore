@@ -32,32 +32,32 @@ gzip -dc < "$T/payload" > "$T/raw"
 expected_names='.
 ./B
 ./a
-./a-b
 ./a/b
 ./a/c
 ./a/c/d
 ./a/hello.txt
 ./a/run.sh
 ./a/zero
+./a-b
 ./emp
 ./link
 ./sp ace
 ./sp ace/жук€.txt'
 got_names="$(cpio -it < "$T/raw" 2>/dev/null)"
-[ "$got_names" = "$expected_names" ] || fail "cpio -it lists $(echo "$got_names" | tr '\n' '|'), not the byte-ordered tree"
+[ "$got_names" = "$expected_names" ] || fail "cpio -it lists $(echo "$got_names" | tr '\n' '|'), not the tree depth first, each directory in byte order"
 
 cpio -itv < "$T/raw" 2>/dev/null | awk '{ print $1, $2, $3, $4, $5 }' | sed 's/ root root / root wheel /' > "$T/listing"
 cat > "$T/listing.expected" <<'EOT'
 drwxr-xr-x 8 root wheel 0
 -rw-r--r-- 1 root wheel 6
 drwxr-xr-x 7 root wheel 0
--rw-r--r-- 1 root wheel 5
 drwxr-xr-x 2 root wheel 0
 drwxr-xr-x 3 root wheel 0
 drwxr-xr-x 2 root wheel 0
 -rw-r--r-- 1 root wheel 6
 -rwxr-xr-x 1 root wheel 17
 -rw-r--r-- 1 root wheel 0
+-rw-r--r-- 1 root wheel 5
 drwx------ 2 root wheel 0
 lrwxr-xr-x 1 root wheel 11
 drwxr-xr-x 3 root wheel 0

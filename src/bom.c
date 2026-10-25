@@ -1,6 +1,5 @@
 #include "bom.h"
 
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +31,8 @@ struct bom {
 	size_t start;
 	unsigned long *addr, *len;
 	unsigned long nblocks;
+	const unsigned char *base;
+	const size_t *data_at;
 };
 
 static int
@@ -99,61 +100,6 @@ crc_finish(unsigned long crc, unsigned long long n)
 		crc = crc_update(crc, &c, 1);
 	}
 	return ~crc & 0xFFFFFFFFUL;
-}
-
-static int
-file_crc(const struct fp_tree *t, const struct fp_entry *e, unsigned long *crc)
-{
-	size_t rootlen = strlen(t->root), got;
-	unsigned long long total = 0;
-	unsigned char chunk[65536];
-	char *fs = malloc(rootlen + strlen(e->path) + 1);
-	unsigned long c = 0;
-	FILE *f;
-	int rc = -1;
-
-	if (fs == NULL) {
-		fputs("stevedore: out of memory\n", stderr);
-		return -1;
-	}
-	memcpy(fs, t->root, rootlen);
-	strcpy(fs + rootlen, e->path + 1);
-	f = fopen(fs, "rb");
-	if (f == NULL) {
-		fprintf(stderr, "stevedore: cannot open: %s: %s\n", e->path, strerror(errno));
-		free(fs);
-		return -1;
-	}
-	while ((got = fread(chunk, 1, sizeof chunk, f)) > 0) {
-		c = crc_update(c, chunk, got);
-		total += got;
-	}
-	if (ferror(f))
-		fprintf(stderr, "stevedore: cannot read: %s: %s\n", e->path, strerror(errno));
-	else if (total != e->size)
-		fprintf(stderr, "stevedore: file changed while reading: %s\n", e->path);
-	else {
-		*crc = crc_finish(c, total);
-		rc = 0;
-	}
-	fclose(f);
-	free(fs);
-	return rc;
-}
-
-static int
-cmp_dfs(const void *a, const void *b)
-{
-	const unsigned char *x = (const unsigned char *)(*(const struct fp_entry *const *)a)->path;
-	const unsigned char *y = (const unsigned char *)(*(const struct fp_entry *const *)b)->path;
-	unsigned cx, cy;
-
-	for (;; x++, y++) {
-		cx = *x == '/' ? 1 : *x == '\0' ? 0 : (unsigned)*x + 1;
-		cy = *y == '/' ? 1 : *y == '\0' ? 0 : (unsigned)*y + 1;
-		if (cx != cy || cx == 0)
-			return cx < cy ? -1 : cx > cy;
-	}
 }
 
 static int
@@ -342,7 +288,7 @@ static int
 plan(const struct fp_tree *t, struct path **keys_out, struct node **nodes_out, size_t *nnodes,
     size_t *nleaves)
 {
-	const struct fp_entry **dfs = malloc(t->n * sizeof *dfs);
+	size_t *dfs = fp_tree_dfs(t);
 	unsigned long *ids = malloc(t->n * sizeof *ids);
 	struct path *keys = malloc(t->n * sizeof *keys);
 	struct node *nodes = NULL;
@@ -351,10 +297,7 @@ plan(const struct fp_tree *t, struct path **keys_out, struct node **nodes_out, s
 	if (dfs == NULL || ids == NULL || keys == NULL)
 		goto oom;
 	for (i = 0; i < t->n; i++)
-		dfs[i] = &t->e[i];
-	qsort(dfs, t->n, sizeof *dfs, cmp_dfs);
-	for (i = 0; i < t->n; i++)
-		ids[dfs[i] - t->e] = (unsigned long)i + 1;
+		ids[dfs[i]] = (unsigned long)i + 1;
 	for (i = 0; i < t->n; i++) {
 		const char *p = t->e[i].path, *slash = strrchr(p, '/');
 
@@ -474,8 +417,9 @@ emit(struct bom *b, const struct fp_tree *t, long mtime, unsigned long long tota
 		unsigned long type = p->e->mode & 0170000;
 
 		crc = 0;
-		if (type == 0100000 && file_crc(t, p->e, &crc) != 0)
-			goto out;
+		if (type == 0100000)
+			crc = crc_finish(crc_update(0, b->base + b->data_at[p->e - t->e], (size_t)p->e->size),
+			    p->e->size);
 		if (type == 0120000)
 			crc = crc_finish(crc_update(0, (const unsigned char *)p->e->link_target,
 			    (size_t)p->e->size), p->e->size);
@@ -523,7 +467,8 @@ out:
 }
 
 int
-fp_bom(const struct fp_tree *t, long mtime, struct fp_buf *out)
+fp_bom(const struct fp_tree *t, long mtime, const unsigned char *base, const size_t *data_at,
+    struct fp_buf *out)
 {
 	struct bom b;
 	struct path *keys = NULL;
@@ -539,6 +484,8 @@ fp_bom(const struct fp_tree *t, long mtime, struct fp_buf *out)
 		return -1;
 	memset(&b, 0, sizeof b);
 	b.out = out;
+	b.base = base;
+	b.data_at = data_at;
 	b.start = out->len;
 	b.nblocks = 10 + 3 * (unsigned long)t->n + (unsigned long)nnodes - 1;
 	b.addr = calloc(b.nblocks + 1, sizeof *b.addr);

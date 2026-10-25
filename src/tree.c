@@ -233,3 +233,38 @@ fp_tree_free(struct fp_tree *t)
 	free(t->root);
 	memset(t, 0, sizeof *t);
 }
+
+static int
+cmp_dfs(const void *a, const void *b)
+{
+	const unsigned char *x = (const unsigned char *)(*(const struct fp_entry *const *)a)->path;
+	const unsigned char *y = (const unsigned char *)(*(const struct fp_entry *const *)b)->path;
+	unsigned cx, cy;
+
+	for (;; x++, y++) {
+		cx = *x == '/' ? 1 : *x == '\0' ? 0 : (unsigned)*x + 1;
+		cy = *y == '/' ? 1 : *y == '\0' ? 0 : (unsigned)*y + 1;
+		if (cx != cy || cx == 0)
+			return cx < cy ? -1 : cx > cy;
+	}
+}
+
+size_t *
+fp_tree_dfs(const struct fp_tree *t)
+{
+	const struct fp_entry **p = malloc(t->n * sizeof *p);
+	size_t *order = malloc(t->n * sizeof *order), i;
+
+	if (p == NULL || order == NULL) {
+		free(p);
+		free(order);
+		return NULL;
+	}
+	for (i = 0; i < t->n; i++)
+		p[i] = &t->e[i];
+	qsort(p, t->n, sizeof *p, cmp_dfs);
+	for (i = 0; i < t->n; i++)
+		order[i] = (size_t)(p[i] - t->e);
+	free(p);
+	return order;
+}

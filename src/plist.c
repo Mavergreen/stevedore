@@ -1258,6 +1258,19 @@ fp_plist_lookup(const struct fp_plist *p, const char *keypath, size_t *len, int 
 	}
 }
 
+int
+fp_plist_kind(const struct fp_plist *p, const char *keypath)
+{
+	const char *k = strip(keypath);
+	const struct node *n = walk(p->root, k, k + strlen(k));
+
+	if (n == NULL)
+		return 0;
+	if (n->type == P_STRING)
+		return FP_PLIST_IS_STRING;
+	return n->type == P_INTEGER ? FP_PLIST_IS_INTEGER : FP_PLIST_IS_OTHER;
+}
+
 const char *
 fp_plist_get(const struct fp_plist *p, const char *keypath)
 {

@@ -13,6 +13,8 @@
 
 #include "bom.h"
 #include "buf.h"
+#include "cli.h"
+#include "component.h"
 #include "cpio.h"
 #include "gz.h"
 #include "plist.h"
@@ -22,26 +24,12 @@
 #define FP_SCRIPTS_MAX (64 << 20)
 
 static int
-read_all(FILE *f, struct fp_buf *b)
-{
-	size_t got;
-
-	for (;;) {
-		if (fp_buf_reserve(b, 65536) != 0)
-			return -1;
-		got = fread(b->p + b->len, 1, 65536, f);
-		b->len += got;
-		if (got < 65536)
-			return ferror(f) ? -1 : 0;
-	}
-}
-
-static int
 usage(void)
 {
 	fputs("usage: stevedore gzip|zlib < input > output\n"
 	    "       stevedore payload --root DIR --mtime EPOCH --out FILE\n"
 	    "       stevedore bom --root DIR --mtime EPOCH --out FILE\n"
+	    "       " FP_COMPONENT_USAGE
 	    "       stevedore plist get FILE KEYPATH         (scalars only: a dict or array exits 3)\n"
 	    "       stevedore plist has FILE KEYPATH\n"
 	    "       stevedore plist set FILE KEYPATH string|integer|real|bool VALUE\n"
@@ -50,7 +38,8 @@ usage(void)
 	    "       stevedore sha1 < input\n"
 	    "       stevedore xar --mtime EPOCH --out FILE {zlib|none NAME SOURCE}...\n"
 	    "       stevedore expand PKG DIR\n"
-	    "       stevedore toc PKG\n", stderr);
+	    "       stevedore toc PKG\n"
+	    "       stevedore --version\n", stderr);
 	return 2;
 }
 
@@ -60,7 +49,7 @@ filter(const char *name, int (*fn)(const unsigned char *, size_t, struct fp_buf 
 	struct fp_buf in = { 0 }, out = { 0 };
 	int rc = 0;
 
-	if (read_all(stdin, &in) != 0) {
+	if (fp_read_all(stdin, &in) != 0) {
 		perror("stevedore: reading standard input");
 		rc = 1;
 	} else if (fn(in.p, in.len, &out) != 0) {
@@ -73,49 +62,6 @@ filter(const char *name, int (*fn)(const unsigned char *, size_t, struct fp_buf 
 	fp_buf_free(&in);
 	fp_buf_free(&out);
 	return rc;
-}
-
-static int
-write_atomic(const char *outpath, const struct fp_buf *b, long mode)
-{
-	size_t tl = strlen(outpath) + 16, w;
-	char *tmp = malloc(tl);
-	FILE *f;
-	int rc = 0;
-
-	if (tmp == NULL) {
-		fputs("stevedore: out of memory\n", stderr);
-		return 1;
-	}
-	snprintf(tmp, tl, "%s.stevedore-tmp", outpath);
-	if ((f = fopen(tmp, "wb")) == NULL) {
-		perror(tmp);
-		rc = 1;
-	} else {
-		w = fwrite(b->p, 1, b->len, f);
-		if (fclose(f) != 0 || w != b->len || (mode >= 0 && chmod(tmp, (mode_t)mode) != 0)
-		    || rename(tmp, outpath) != 0) {
-			perror(outpath);
-			rc = 1;
-			remove(tmp);
-		}
-	}
-	free(tmp);
-	return rc;
-}
-
-static int
-parse_mtime(const char *arg, long *mtime)
-{
-	char *end;
-
-	errno = 0;
-	*mtime = strtol(arg, &end, 10);
-	if (*arg < '0' || *arg > '9' || *end != '\0' || errno != 0) {
-		fprintf(stderr, "stevedore: invalid --mtime: %s\n", arg);
-		return 2;
-	}
-	return 0;
 }
 
 static int
@@ -137,7 +83,7 @@ tree_args(int argc, char **argv, const char **root, long *mtime, const char **ou
 	}
 	if (i != argc || *root == NULL || mtime_arg == NULL || *outpath == NULL)
 		return usage();
-	return parse_mtime(mtime_arg, mtime);
+	return fp_parse_mtime(mtime_arg, mtime);
 }
 
 static int
@@ -154,7 +100,7 @@ payload(int argc, char **argv)
 	rc = fp_tree_scan(root, &t);
 	if (rc != 0)
 		return rc < 0 ? 1 : rc;
-	rc = fp_cpio_odc(&t, mtime, &cpio);
+	rc = fp_cpio_odc(&t, mtime, &cpio, NULL);
 	fp_tree_free(&t);
 	if (rc != 0) {
 		fp_buf_free(&cpio);
@@ -164,7 +110,7 @@ payload(int argc, char **argv)
 		fputs("stevedore: gzip failed\n", stderr);
 		rc = 1;
 	} else {
-		rc = write_atomic(outpath, &gz, -1);
+		rc = fp_write_atomic(outpath, &gz, -1);
 	}
 	fp_buf_free(&cpio);
 	fp_buf_free(&gz);
@@ -176,7 +122,8 @@ bom(int argc, char **argv)
 {
 	const char *root, *outpath;
 	struct fp_tree t;
-	struct fp_buf b = { 0 };
+	struct fp_buf cpio = { 0 }, b = { 0 };
+	size_t *at;
 	long mtime;
 	int rc;
 
@@ -185,10 +132,17 @@ bom(int argc, char **argv)
 	rc = fp_tree_scan(root, &t);
 	if (rc != 0)
 		return rc < 0 ? 1 : rc;
-	rc = fp_bom(&t, mtime, &b);
+	if ((at = malloc(t.n * sizeof *at)) == NULL) {
+		fputs("stevedore: out of memory\n", stderr);
+		rc = -1;
+	} else if ((rc = fp_cpio_odc(&t, mtime, &cpio, at)) == 0) {
+		rc = fp_bom(&t, mtime, cpio.p, at, &b);
+	}
 	fp_tree_free(&t);
+	free(at);
+	fp_buf_free(&cpio);
 	if (rc == 0)
-		rc = write_atomic(outpath, &b, -1);
+		rc = fp_write_atomic(outpath, &b, -1);
 	fp_buf_free(&b);
 	return rc < 0 ? 1 : rc;
 }
@@ -238,7 +192,7 @@ plist(int argc, char **argv)
 			fputs("stevedore: out of memory\n", stderr);
 			rc = 2;
 		} else if (rc == 0) {
-			rc = write_atomic(argv[3], &b, mode) != 0 ? 2 : 0;
+			rc = fp_write_atomic(argv[3], &b, mode) != 0 ? 2 : 0;
 		}
 	} else if (fp_plist_write_xml(p, &b) != 0) {
 		fputs("stevedore: out of memory\n", stderr);
@@ -260,7 +214,7 @@ sha1(void)
 	char hex[2 * FP_SHA1_LEN + 1];
 	int rc = 0;
 
-	if (read_all(stdin, &in) != 0) {
+	if (fp_read_all(stdin, &in) != 0) {
 		perror("stevedore: reading standard input");
 		rc = 1;
 	} else {
@@ -296,7 +250,7 @@ xar(int argc, char **argv)
 	}
 	if (mtime_arg == NULL || outpath == NULL || i == argc || (argc - i) % 3 != 0)
 		return usage();
-	if ((rc = parse_mtime(mtime_arg, &mtime)) != 0)
+	if ((rc = fp_parse_mtime(mtime_arg, &mtime)) != 0)
 		return rc;
 	e = calloc((size_t)(argc - i) / 3, sizeof *e);
 	data = calloc((size_t)(argc - i) / 3, sizeof *data);
@@ -313,7 +267,7 @@ xar(int argc, char **argv)
 		else
 			rc = usage();
 		e[n].path = argv[i + 1];
-		if (rc == 0 && ((f = fopen(argv[i + 2], "rb")) == NULL || read_all(f, &data[n]) != 0)) {
+		if (rc == 0 && ((f = fopen(argv[i + 2], "rb")) == NULL || fp_read_all(f, &data[n]) != 0)) {
 			perror(argv[i + 2]);
 			rc = 2;
 		}
@@ -323,7 +277,7 @@ xar(int argc, char **argv)
 		e[n].len = data[n].len;
 	}
 	if (rc == 0 && (rc = fp_xar_write(e, n, mtime, &out)) == 0)
-		rc = write_atomic(outpath, &out, -1);
+		rc = fp_write_atomic(outpath, &out, -1);
 	for (j = 0; j < n; j++)
 		fp_buf_free(&data[j]);
 	free(e);
@@ -561,6 +515,10 @@ main(int argc, char **argv)
 		return payload(argc, argv);
 	if (strcmp(argv[1], "plist") == 0)
 		return plist(argc, argv);
+	if (strcmp(argv[1], "component") == 0)
+		return fp_component(argc, argv);
+	if (argc == 2 && strcmp(argv[1], "--version") == 0)
+		return printf("stevedore %s\n", STEVEDORE_VERSION) < 0 || fflush(stdout) != 0;
 	if (strcmp(argv[1], "bom") == 0)
 		return bom(argc, argv);
 	if (argc == 2 && strcmp(argv[1], "sha1") == 0)

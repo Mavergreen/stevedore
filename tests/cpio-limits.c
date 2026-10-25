@@ -58,7 +58,7 @@ main(int argc, char **argv)
 	} else if (strcmp(argv[1], "size") != 0) {
 		return 64;
 	}
-	rc = fp_cpio_odc(&t, mtime, &out);
+	rc = fp_cpio_odc(&t, mtime, &out, NULL);
 	printf("rc=%d len=%lu\n", rc, (unsigned long)out.len);
 	return rc;
 }

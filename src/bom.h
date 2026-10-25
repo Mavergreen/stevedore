@@ -4,6 +4,7 @@
 #include "buf.h"
 #include "tree.h"
 
-int fp_bom(const struct fp_tree *t, long mtime, struct fp_buf *out);
+int fp_bom(const struct fp_tree *t, long mtime, const unsigned char *base, const size_t *data_at,
+    struct fp_buf *out);
 
 #endif

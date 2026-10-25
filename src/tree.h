@@ -21,5 +21,6 @@ struct fp_tree {
 
 int fp_tree_scan(const char *root, struct fp_tree *t);
 void fp_tree_free(struct fp_tree *t);
+size_t *fp_tree_dfs(const struct fp_tree *t);
 
 #endif
