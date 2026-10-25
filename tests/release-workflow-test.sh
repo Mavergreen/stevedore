@@ -3,7 +3,8 @@
 # usage: sh tests/release-workflow-test.sh
 #   .github/workflows/release.yml keeps the release shape: a push builds and never publishes, a dispatch on main
 #   does; publish waits for the package job and for the 10.9 on-target job, which installs this run's pkg in
-#   mavericks-vm and runs every suite against the stevedore it installed; the Linux tarball is
+#   mavericks-vm and runs every suite against the stevedore it installed; both run once per same-repo PR head
+#   (its branch push), and on a fork's or Renovate's PR; the Linux tarball is
 #   opt/mavergreen/stevedore/ alone and passes shipyard's product-archive reader; no run: block holds ${{ }}; no
 #   job anywhere runs on a macOS runner without a macos-runner:<job> deviation; and an ingredient in INGREDIENTS.md's
 #   Declared state is exactly what repackage-on-ingredient-bump.yml watches. Each check is shown to refuse a
@@ -34,6 +35,11 @@ shape() {
   _on="$(awk '/^on:/ { on = 1; next } on && /^[^ #]/ { exit } on && /^  [a-z_]+:/ { print $1 }' "$1" | tr '\n' ' ')"
   [ "$_on" = "push: pull_request: workflow_dispatch: " ] || { echo "on: is not push, pull_request and workflow_dispatch: [$_on]"; return 1; }
   grep -qx "    branches-ignore: \['renovate/\*\*'\]" "$1" || { echo "push does not build every branch but Renovate's"; return 1; }
+  for _j in package on-target; do
+    [ "$(job "$1" "$_j" | grep -c '^    if: ')" = 1 ] \
+      && job "$1" "$_j" | grep -qxF "    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'renovate/')" \
+      || { echo "the $_j job does not skip a same-repo PR's second run while running a fork's and Renovate's"; return 1; }
+  done
   job "$1" ver > "$T/ver"
   [ "$(grep -c 'pub=yes' "$T/ver")" = 2 ] \
     && grep -qxF '          if [ "$GITHUB_REF" = refs/heads/main ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then' "$T/ver" \
@@ -91,6 +97,9 @@ mutant() {  # mutant <what it breaks> <expected message> <file: W, R or I> <sed 
 mutant "a tag trigger" "on: is not push" W 's/^  pull_request:$/  release:\
   pull_request:/'
 mutant "push on main only" "every branch but Renovate's" W "s|branches-ignore: \['renovate/\*\*'\]|branches: [main]|"
+mutant "a package job that runs twice per PR" "the package job does not skip" W '/^  package:$/,/^  on-target:$/{/^    if: github.event_name/d;}'
+mutant "an on-target job that runs twice per PR" "the on-target job does not skip" W '/^  on-target:$/,/^  publish:$/{/^    if: github.event_name/d;}'
+mutant "Renovate PRs left unpackaged" "does not skip a same-repo PR" W "s/ || startsWith(github.head_ref, 'renovate\/')//"
 mutant "a push to main that publishes" "other than a dispatch on main" W 's/ && \[ "$GITHUB_EVENT_NAME" = workflow_dispatch \]//'
 mutant "a dispatch on any ref" "other than a dispatch on main" W 's/\[ "$GITHUB_REF" = refs\/heads\/main \] && //'
 mutant "a publish decided before the guard" "other than a dispatch on main" W 's/^          pub=no$/          pub=yes/'

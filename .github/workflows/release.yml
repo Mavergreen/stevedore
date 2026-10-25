@@ -143,8 +143,12 @@ jobs:
 
   # spec: INGREDIENTS.md "Conformance deviations", macos-runner:package -- the pkg is built here until
   #       stevedore packages itself, and the arm64 slice until shipyard's toolchain cross-builds arm64 on Linux
+  # spec: INGREDIENTS.md "Conformance deviations", macos-runner:package -- a same-repo PR's head already ran
+  #       here on its branch push, so its pull_request run skips this job and on-target; a fork's PR and a
+  #       Renovate PR, whose branch push release.yml does not build, run them
   package:
     needs: [ver, build-linux]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'renovate/')
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -232,6 +236,7 @@ jobs:
   #       and every suite run against the stevedore it installed
   on-target:
     needs: [ver, build-linux, package]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'renovate/')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
