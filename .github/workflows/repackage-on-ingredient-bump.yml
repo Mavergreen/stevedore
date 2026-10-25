@@ -1,0 +1,23 @@
+name: repackage-on-ingredient-bump
+
+# spec: shipyard SKILL.md "Consuming a Mavergreen toolchain" -- zlib and clang22 are baked into stevedore;
+#       stevedore is its own upstream, so no own-upstream-paths
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - components/zlib/version
+      - components/zlib/sha256
+      - components/clang22/version
+      - components/clang22/sha256
+
+permissions: {}
+
+jobs:
+  repackage:
+    permissions:
+      actions: write
+    uses: Mavergreen/shipyard/.github/workflows/repackage-on-ingredient-bump.yml@v1
+    with:
+      dispatch-field: repackage=true
