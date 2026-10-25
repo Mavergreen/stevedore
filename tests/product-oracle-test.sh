@@ -8,7 +8,8 @@
 #          own self-check must accept both. The Distributions are compared byte for byte except where
 #          productbuild itself varies: the bundle elements' order and their attributes' order (hash
 #          order, which differs between productbuild versions, so both are sorted), and updateKBytes="0",
-#          which productbuild on 10.9 omits and later productbuild writes (so it is removed).
+#          which productbuild on 10.9 omits and later productbuild writes (so it is removed), and what
+#          tests/fixtures/oracle/normalize.sh reconciles.
 #          With passwordless sudo it then installs both fixture products, under throwaway identifiers
 #          and a scratch install location instead of the real dev.mavergreen.base, compares the receipts,
 #          the installed trees and the order the scripts ran in, and checks that Installer refuses both
@@ -22,6 +23,7 @@ FX="$STEVEDORE_ROOT/tests/fixtures"
 SHIPYARD_SCRIPTS="${SHIPYARD_SCRIPTS:-/usr/local/mavergreen/shipyard/share/cmake/MavericksShipyard/scripts}"
 . "$FX/trees/bundles.sh"
 . "$FX/product/build.sh"
+. "$FX/oracle/normalize.sh"
 fails=0
 fail() { echo "FAIL: $*" >&2; fails=$((fails + 1)); }
 
@@ -95,8 +97,9 @@ same_products() {
     [ -f "$T/pb.x/$p" ] && ! [ -h "$T/pb.x/$p" ] || continue
     cmp -s "$T/pb.x/$p" "$T/sd.x/$p" || fail "$what: $p differs"
   done < "$T/pb.list"
-  canon "$T/pb.x/Distribution" > "$T/pb.canon"; canon "$T/sd.x/Distribution" > "$T/sd.canon"
-  cmp -s "$T/pb.canon" "$T/sd.canon" || fail "$what: the Distributions differ beyond bundle order and updateKBytes: $(diff "$T/pb.canon" "$T/sd.canon" | head -12 | tr '\n' '|')"
+  oracle_reconcile "$T/pb.x/Distribution" "$T/sd.x/Distribution" "$T/pb.dist" "$T/sd.dist"
+  canon "$T/pb.dist" > "$T/pb.canon"; canon "$T/sd.dist" > "$T/sd.canon"
+  cmp -s "$T/pb.canon" "$T/sd.canon" || fail "$what: the Distributions differ beyond bundle order, updateKBytes and oracle_reconcile: $(diff "$T/pb.canon" "$T/sd.canon" | head -12 | tr '\n' '|')"
   [ "$(tail -c 1 "$T/pb.x/Distribution")" = "$(tail -c 1 "$T/sd.x/Distribution")" ] || fail "$what: the Distributions end differently"
 }
 
@@ -146,7 +149,8 @@ product_fixture "$SD" "$T/s" "$T/fx.sd.pkg" || fail "stevedore product of the fi
 if [ -f "$T/fx.pb.pkg" ] && [ -f "$T/fx.sd.pkg" ]; then
   same_products fixture "$T/fx.pb.pkg" "$T/fx.sd.pkg" || :
   cmp -s "$T/sd.x/Distribution" "$FX/product/Distribution" || fail "the fixture's Distribution is not tests/fixtures/product/Distribution"
-  canon "$FX/product/Distribution" | cmp -s - "$T/pb.canon" || fail "tests/fixtures/product/Distribution is not productbuild's beyond bundle order and updateKBytes"
+  oracle_reconcile "$T/pb.x/Distribution" "$FX/product/Distribution" "$T/pb.dist" "$T/fx.dist"
+  canon "$T/fx.dist" | cmp -s - "$T/pb.canon" || fail "tests/fixtures/product/Distribution is not productbuild's beyond bundle order, updateKBytes and oracle_reconcile"
 fi
 
 [ "$sudo" -eq 1 ] || {

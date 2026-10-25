@@ -17,6 +17,7 @@ SHIPYARD_SCRIPTS="${SHIPYARD_SCRIPTS:-/usr/local/mavergreen/shipyard/share/cmake
 . "$FX/trees/many.sh"
 . "$FX/trees/bundles.sh"
 . "$FX/trees/scripts.sh"
+. "$FX/oracle/normalize.sh"
 fails=0
 fail() { echo "FAIL: $*" >&2; fails=$((fails + 1)); }
 
@@ -140,9 +141,10 @@ expanded() {
         || fail "$name: the $s entry has no timeout=\"600\""
     done
   fi
-  normalize "$T/$name.pb/PackageInfo" > "$T/pb.out"
-  normalize "$T/$name.sd/PackageInfo" > "$T/sd.out"
-  cmp -s "$T/pb.out" "$T/sd.out" || fail "$name: the PackageInfos differ beyond generator-version, timeout and order: $(diff "$T/pb.out" "$T/sd.out" | head -12 | tr '\n' '|')"
+  oracle_reconcile "$T/$name.pb/PackageInfo" "$T/$name.sd/PackageInfo" "$T/pb.pi" "$T/sd.pi"
+  normalize "$T/pb.pi" > "$T/pb.out"
+  normalize "$T/sd.pi" > "$T/sd.out"
+  cmp -s "$T/pb.out" "$T/sd.out" || fail "$name: the PackageInfos differ beyond generator-version, timeout, order and oracle_reconcile: $(diff "$T/pb.out" "$T/sd.out" | head -12 | tr '\n' '|')"
   grep -q "generator-version=\"stevedore-$("$SD" --version | sed 's/^stevedore //')\"" "$T/$name.sd/PackageInfo" \
     || fail "$name: generator-version is not stevedore-<version>"
   sh "$SHIPYARD_SCRIPTS/assert_pkg_installs_in_place.sh" "$T/$name.sd.pkg" >/dev/null 2>"$T/inplace.err" \
