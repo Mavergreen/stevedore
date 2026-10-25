@@ -265,11 +265,14 @@ if [ "$(uname -s)" = Darwin ] && command -v xar >/dev/null 2>&1; then
   same_tree "$T/in" "$T/xar-x" "xar -x of our archive"
   xar --dump-toc="$T/dump.toc" -f "$T/product.xar" || fail "xar --dump-toc rejects our archive"
   same_lines "$T/dump.toc" "$T/product.toc" "xar --dump-toc of our archive"
+  # platform: guarded macOS-only call -- inside the Darwin-and-xar check that opens this block
   pkgutil --expand "$T/product.xar" "$T/pkgutil" || fail "pkgutil --expand rejects our archive"
   same_tree "$T/ex" "$T/pkgutil" "stevedore expand vs pkgutil --expand of our archive"
   (cd "$T/in" && xar -c -f "$T/xar-c.xar" base.pkg "$XAR_ODD" Distribution) || fail "xar -c of the inputs failed"
   "$SD" expand "$T/xar-c.xar" "$T/xar-c" || fail "stevedore expand of an archive xar -c made exited $?"
   same_tree "$T/want" "$T/xar-c" "stevedore expand of an archive xar -c made"
+elif [ "${STEVEDORE_REQUIRE_ORACLE:-}" = 1 ]; then
+  fail "STEVEDORE_REQUIRE_ORACLE=1, but this host is not a Mac with xar to compare with, so that comparison did not run"
 fi
 
 if [ "$(uname -s)" = Darwin ] && command -v pkgbuild >/dev/null 2>&1; then
@@ -277,20 +280,23 @@ if [ "$(uname -s)" = Darwin ] && command -v pkgbuild >/dev/null 2>&1; then
   printf 'hello\n' > "$T/pb-root/sub/hello.txt"
   printf '#!/bin/sh\nexit 0\n' > "$T/pb-scripts/postinstall"
   chmod 755 "$T/pb-scripts/postinstall"
-  if pkgbuild --root "$T/pb-root" --scripts "$T/pb-scripts" --identifier test.stevedore.xar --version 1 \
-       --install-location /tmp/stevedore-xar-test "$T/component.pkg" >/dev/null 2>&1 \
-     && productbuild --package "$T/component.pkg" "$T/product.pkg" >/dev/null 2>&1; then
-    for name in component product; do
-      pkgutil --expand "$T/$name.pkg" "$T/$name.pkgutil" || { fail "pkgutil --expand rejects pkgbuild's $name pkg"; continue; }
-      "$SD" expand "$T/$name.pkg" "$T/$name.sd" || { fail "stevedore expand of pkgbuild's $name pkg exited $?"; continue; }
-      same_tree "$T/$name.pkgutil" "$T/$name.sd" "stevedore expand vs pkgutil --expand of pkgbuild's $name pkg"
-      "$SD" toc "$T/$name.pkg" > "$T/$name.sdtoc" || fail "stevedore toc of pkgbuild's $name pkg exited $?"
-      xar --dump-toc="$T/$name.xartoc" -f "$T/$name.pkg" || fail "xar --dump-toc rejects pkgbuild's $name pkg"
-      same_lines "$T/$name.xartoc" "$T/$name.sdtoc" "xar --dump-toc vs stevedore toc of pkgbuild's $name pkg"
-    done
-  else
-    fail "could not make pkgbuild and productbuild pkgs to compare with"
-  fi
+  # platform: guarded macOS-only call -- inside the Darwin-and-pkgbuild check that opens this block
+  pkgbuild --root "$T/pb-root" --scripts "$T/pb-scripts" --identifier test.stevedore.xar --version 1 \
+    --install-location /tmp/stevedore-xar-test "$T/component.pkg" >/dev/null 2>&1 || fail "could not make a pkgbuild pkg to compare with"
+  # platform: guarded macOS-only call -- inside the Darwin-and-pkgbuild check that opens this block
+  productbuild --package "$T/component.pkg" "$T/product.pkg" >/dev/null 2>&1 || fail "could not make a productbuild pkg to compare with"
+  for name in component product; do
+    [ -f "$T/$name.pkg" ] || continue
+    # platform: guarded macOS-only call -- inside the Darwin-and-pkgbuild check that opens this block
+    pkgutil --expand "$T/$name.pkg" "$T/$name.pkgutil" || { fail "pkgutil --expand rejects pkgbuild's $name pkg"; continue; }
+    "$SD" expand "$T/$name.pkg" "$T/$name.sd" || { fail "stevedore expand of pkgbuild's $name pkg exited $?"; continue; }
+    same_tree "$T/$name.pkgutil" "$T/$name.sd" "stevedore expand vs pkgutil --expand of pkgbuild's $name pkg"
+    "$SD" toc "$T/$name.pkg" > "$T/$name.sdtoc" || fail "stevedore toc of pkgbuild's $name pkg exited $?"
+    xar --dump-toc="$T/$name.xartoc" -f "$T/$name.pkg" || fail "xar --dump-toc rejects pkgbuild's $name pkg"
+    same_lines "$T/$name.xartoc" "$T/$name.sdtoc" "xar --dump-toc vs stevedore toc of pkgbuild's $name pkg"
+  done
+elif [ "${STEVEDORE_REQUIRE_ORACLE:-}" = 1 ]; then
+  fail "STEVEDORE_REQUIRE_ORACLE=1, but this host is not a Mac with pkgbuild to compare with, so that comparison did not run"
 fi
 
 [ "$fails" -eq 0 ] || { echo "xar-test: $fails failure(s)" >&2; exit 1; }

@@ -1,6 +1,6 @@
-#include <limits.h>
-
 #include "component.c"
+
+#include <limits.h>
 
 int
 main(void)

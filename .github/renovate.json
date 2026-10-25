@@ -10,13 +10,28 @@
       "depNameTemplate": "madler/zlib",
       "datasourceTemplate": "github-releases",
       "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "The clang22 release stevedore is built with: its Linux archive on Linux, verified against components/clang22/sha256, and its clang22-cross pkg on a Mac that has not installed that release.",
+      "managerFilePatterns": ["/^components/clang22/version$/"],
+      "matchStrings": ["^(?<currentValue>\\S+)\\s*$"],
+      "depNameTemplate": "Mavergreen/clang-22",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-mavericks\\.(?<build>\\d+)$"
     }
   ],
+  "gitIgnoredAuthors": ["342268518+mavergreen-pins-bot[bot]@users.noreply.github.com"],
   "packageRules": [
+    {
+      "description": "Renovate moves components/clang22/version but cannot vouch for the new Linux archive, so the Linux builds fail at the fetch until components/clang22/sha256 is written for it.",
+      "matchDepNames": ["Mavergreen/clang-22"],
+      "prBodyNotes": ["The Linux builds fail until components/clang22/sha256 is the new release's linux-x86_64 archive digest. .github/workflows/pins-bot.yml writes it on this branch with `sh build/pin-clang22.sh fill`; if that bot failed, run `sh build/pin-clang22.sh` on this branch (it checks the archive against the release's SHA256SUMS) and commit the file."]
+    },
     {
       "description": "Renovate moves components/zlib/version but cannot vouch for the new tarball, so the build fails at the fetch until components/zlib/sha256 is written for it.",
       "matchDepNames": ["madler/zlib"],
-      "prBodyNotes": ["The build fails until components/zlib/sha256 matches the new tarball: run `sh build/pin-zlib.sh` on this branch (it checks GitHub's tarball against zlib.net's), regenerate tests/fixtures/gz with `sh tests/fixtures/gz/generate.sh` if the deflate output moved, and commit both."]
+      "prBodyNotes": ["The build fails until components/zlib/sha256 matches the new tarball. .github/workflows/pins-bot.yml writes it on this branch; if that bot failed, run `sh build/pin-zlib.sh` on this branch (it checks GitHub's tarball against zlib.net's). Regenerate tests/fixtures/gz with `sh tests/fixtures/gz/generate.sh` if the deflate output moved, and commit both."]
     }
   ]
 }

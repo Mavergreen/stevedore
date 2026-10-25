@@ -1,0 +1,145 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+      - uses: Mavergreen/shipyard/.github/actions/install@v1
+      - name: Build out of tree
+        run: echo "MAVERICKS_BUILD_ROOT=$RUNNER_TEMP/mm-build" >> "$GITHUB_ENV"
+      - name: The suites read payloads with cpio
+        run: command -v cpio || { sudo apt-get update -qq && sudo apt-get install -y -qq cpio; }
+      - name: Record the pre-build tree
+        run: sh "$SHIPYARD_SCRIPTS/assert-tree-clean.sh" --record
+      - name: Build a Linux stevedore with clang22's Linux archive
+        run: sh build/build.sh
+      - name: Every host-agnostic suite, the determinism test included, must run, not skip
+        env:
+          STEVEDORE_DETERMINISM_OUT: ${{ runner.temp }}/determinism
+        run: sh "$SHIPYARD_SCRIPTS/run-repo-tests.sh" --strict-host
+      - uses: actions/upload-artifact@v7
+        with:
+          name: determinism-linux-x86_64
+          path: ${{ runner.temp }}/determinism
+          if-no-files-found: error
+      - name: The build must not have written into the source tree
+        run: sh "$SHIPYARD_SCRIPTS/assert-tree-clean.sh"
+
+  vm-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+      - uses: Mavergreen/shipyard/.github/actions/install@v1
+      - name: Build out of tree
+        run: echo "MAVERICKS_BUILD_ROOT=$RUNNER_TEMP/mm-build" >> "$GITHUB_ENV"
+      - name: Cross-build the x86_64 10.9 stevedore with clang22's Linux archive
+        env:
+          STEVEDORE_TARGET: darwin
+        run: |
+          set -eu
+          B="$(sh build/build.sh)"
+          mkdir sd
+          for b in stevedore stevedore-golden stevedore-pin-mismatch stevedore-component-limits stevedore-cpio-limits; do
+            cp "$B/$b" sd/
+          done
+          cp -R "$SHIPYARD_SCRIPTS" .shipyard-scripts
+      - name: Every suite, the determinism and install tests included, must run on Mac OS X 10.9, not skip
+        uses: Mavergreen/mavericks-vm@v1
+        with:
+          image-key: ${{ secrets.MAVERICKS_VM_KEY }}
+          run: |
+            sw_vers
+            sudo -n true || { echo "the guest's user cannot sudo without a password, and the install tests need root"; exit 1; }
+            rc=0
+            STEVEDORE_BUILD="$PWD/sd" SHIPYARD_SCRIPTS="$PWD/.shipyard-scripts" STEVEDORE_DETERMINISM_OUT="$PWD/determinism" STEVEDORE_REQUIRE_ORACLE=1 \
+              sh .shipyard-scripts/run-repo-tests.sh --strict-host > tests.log 2>&1 || rc=$?
+            cat tests.log
+            [ "$rc" -eq 0 ] || exit 1
+            if grep '^SKIP ' tests.log; then echo "a suite skipped on 10.9, where every one of them must run"; exit 1; fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: determinism-mavericks-x86_64
+          path: determinism
+          if-no-files-found: error
+
+  oracle:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+      - uses: Mavergreen/shipyard/.github/actions/install@v1
+      - name: Build out of tree
+        run: echo "MAVERICKS_BUILD_ROOT=$RUNNER_TEMP/mm-build" >> "$GITHUB_ENV"
+      - name: Record the pre-build tree
+        run: sh "$SHIPYARD_SCRIPTS/assert-tree-clean.sh" --record
+      - uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/mavergreen-pkgs/clang-22
+          key: clang22-cross-${{ hashFiles('components/clang22/version') }}
+      - name: Build the arm64 stevedore with clang22-cross
+        env:
+          ARCH: arm64
+        run: sh build/build.sh
+      - name: Every suite, the oracle comparisons and installs included, must run, not skip
+        env:
+          ARCH: arm64
+          STEVEDORE_DETERMINISM_OUT: ${{ runner.temp }}/determinism
+          STEVEDORE_REQUIRE_ORACLE: 1
+        run: |
+          rc=0
+          sh "$SHIPYARD_SCRIPTS/run-repo-tests.sh" --strict-host > "$RUNNER_TEMP/tests.log" 2>&1 || rc=$?
+          cat "$RUNNER_TEMP/tests.log"
+          [ "$rc" -eq 0 ] || exit 1
+          if grep '^SKIP ' "$RUNNER_TEMP/tests.log"; then echo "::error::a suite skipped on macOS, where every one of them must run"; exit 1; fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: determinism-macos-arm64
+          path: ${{ runner.temp }}/determinism
+          if-no-files-found: error
+      - name: The build must not have written into the source tree
+        run: sh "$SHIPYARD_SCRIPTS/assert-tree-clean.sh"
+
+  same-bytes:
+    needs: [linux, vm-test, oracle]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v8
+        with: { pattern: 'determinism-*', path: d }
+      - name: One fixture set, the same bytes on Linux x86_64, Mac OS X 10.9 x86_64 and macOS arm64
+        run: |
+          set -eu
+          ref=d/determinism-linux-x86_64
+          [ -s "$ref/SHA256SUMS" ] || { echo "::error::the Linux job wrote no digests"; exit 1; }
+          (cd "$ref" && sha256sum -c SHA256SUMS)
+          for h in determinism-mavericks-x86_64 determinism-macos-arm64; do
+            [ -s "d/$h/SHA256SUMS" ] || { echo "::error::$h wrote no digests"; exit 1; }
+            (cd "d/$h" && sha256sum -c SHA256SUMS)
+            cmp "$ref/SHA256SUMS" "d/$h/SHA256SUMS" || {
+              echo "::error::$h's pkgs differ from Linux's"; diff "$ref/SHA256SUMS" "d/$h/SHA256SUMS" || :; exit 1; }
+            [ "$(ls "$ref")" = "$(ls "d/$h")" ] || { echo "::error::$h wrote other files than Linux"; exit 1; }
+          done
+          cat "$ref/SHA256SUMS"

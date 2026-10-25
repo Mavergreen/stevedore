@@ -9,9 +9,16 @@ stevedore_arch() {
   fi
 }
 
-stevedore_build_dir() {
-  _os="$(uname -s | tr 'A-Z' 'a-z')"
+stevedore_target() {
+  printf '%s\n' "${STEVEDORE_TARGET:-$(uname -s | tr 'A-Z' 'a-z')}"
+}
+
+stevedore_build_root() {
   _tmp="${TMPDIR:-/tmp}"
   _root="${MAVERICKS_BUILD_ROOT:-${_tmp%/}/mm-build}"
-  printf '%s\n' "${STEVEDORE_BUILD:-${_root%/}/$(basename "$STEVEDORE_ROOT")-$_os-$(stevedore_arch)}"
+  printf '%s\n' "${_root%/}"
+}
+
+stevedore_build_dir() {
+  printf '%s\n' "${STEVEDORE_BUILD:-$(stevedore_build_root)/$(basename "$STEVEDORE_ROOT")-$(stevedore_target)-$(stevedore_arch)}"
 }

@@ -52,9 +52,17 @@ fat_macho() {
     head -c 16 /dev/zero
   } > "$1"
 }
+fat_x86_64_arm64() {
+  _h="$(od -An -tx1 -N32 "$1" 2>/dev/null | tr -d ' \n')"
+  case "$_h" in cafebabe00000002*) ;; *) return 1 ;; esac
+  case "$(printf %s "$_h" | cut -c17-24) $(printf %s "$_h" | cut -c57-64)" in
+    "01000007 0100000c"|"0100000c 01000007") return 0 ;;
+  esac
+  return 1
+}
 universal=""
 for f in /usr/local/mavergreen/python315/bin/python3.15 /usr/local/mavergreen/ninja/bin/ninja /usr/local/mavergreen/cmake/bin/cmake; do
-  [ -f "$f" ] && lipo -info "$f" 2>/dev/null | grep -q 'x86_64 arm64' && { universal="$f"; break; }
+  [ -f "$f" ] && fat_x86_64_arm64 "$f" && { universal="$f"; break; }
 done
 
 mkdir "$T/basic" "$T/many" "$T/bundles" "$T/fat" "$T/scripts"
@@ -68,7 +76,7 @@ fat_macho "$T/fat/bin/synthetic"
 [ -z "$universal" ] || cp "$universal" "$T/fat/bin/universal"
 chmod 755 "$T/fat/bin" "$T/fat/bin"/*
 find "$T/fat" -exec env TZ=UTC touch -h -t 202301011200 {} +
-lipo -info "$T/fat/bin/synthetic" 2>/dev/null | grep -q 'x86_64 arm64' || fail "the synthetic Mach-O is not universal x86_64 and arm64"
+fat_x86_64_arm64 "$T/fat/bin/synthetic" || fail "the synthetic Mach-O is not universal x86_64 and arm64"
 [ -n "$universal" ] || echo "note: no installed universal family binary; the fat fixture holds only the synthetic one"
 
 normalize() {

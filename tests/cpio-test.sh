@@ -101,13 +101,18 @@ mkdir "$T/elsewhere"
 cmp -s "$T/p.a" "$T/payload" && cmp -s "$T/p.b" "$T/payload" || fail "payload changes with TZ, umask, LC_ALL or the current directory"
 
 if [ "$(uname -s)" = Darwin ] && command -v pkgbuild >/dev/null 2>&1; then
+  # platform: guarded macOS-only call -- inside the Darwin-and-pkgbuild check that opens this block
   pkgbuild --root "$T/tree" --identifier test.stevedore.basic --version 1 "$T/pb.pkg" >/dev/null 2>&1 \
-    && pkgutil --expand "$T/pb.pkg" "$T/pb" \
-    && gzip -dc < "$T/pb/Payload" | TZ=UTC cpio -itv 2>/dev/null | LC_ALL=C sort > "$T/pb.listing" \
     || fail "could not make a pkgbuild payload to compare with"
+  # platform: guarded macOS-only call -- inside the Darwin-and-pkgbuild check that opens this block
+  pkgutil --expand "$T/pb.pkg" "$T/pb" || fail "pkgutil --expand rejects pkgbuild's pkg"
+  gzip -dc < "$T/pb/Payload" | TZ=UTC cpio -itv 2>/dev/null | LC_ALL=C sort > "$T/pb.listing" \
+    || fail "could not list pkgbuild's payload"
   "$SD" payload --root "$T/tree" --mtime 1672574400 --out "$T/payload.pb"
   gzip -dc < "$T/payload.pb" | TZ=UTC cpio -itv 2>/dev/null | LC_ALL=C sort | cmp -s - "$T/pb.listing" \
     || fail "cpio -itv of the payload differs from pkgbuild's for the same tree"
+elif [ "${STEVEDORE_REQUIRE_ORACLE:-}" = 1 ]; then
+  fail "STEVEDORE_REQUIRE_ORACLE=1, but this host is not a Mac with pkgbuild to compare with, so that comparison did not run"
 fi
 
 mkdir "$T/hl" "$T/hl/d"

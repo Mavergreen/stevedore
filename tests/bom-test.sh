@@ -69,6 +69,8 @@ EOT
   sed 's/ *	/	/g' "$T/basic.lsbom" | cmp -s - "$T/basic.lsbom.expected" \
     || fail "lsbom -p MUGsTfc of the basic Bom is: $(tr '\n' '|' < "$T/basic.lsbom")"
   [ "$(TZ=UTC lsbom -p f "$T/many.bom" | wc -l | tr -d ' ')" -eq 1202 ] || fail "lsbom does not list all 1202 paths of the many tree"
+elif [ "${STEVEDORE_REQUIRE_ORACLE:-}" = 1 ]; then
+  fail "STEVEDORE_REQUIRE_ORACLE=1, but this host has no lsbom to compare with, so that comparison did not run"
 fi
 
 if [ "$(uname -s)" = Darwin ] && command -v pkgbuild >/dev/null 2>&1; then
@@ -78,14 +80,18 @@ if [ "$(uname -s)" = Darwin ] && command -v pkgbuild >/dev/null 2>&1; then
     cmp -s "$T/pb.out" "$T/sd.out" || fail "lsbom $* of the $name Bom differs from pkgbuild's: $(diff "$T/pb.out" "$T/sd.out" | head -5 | tr '\n' '|')"
   }
   for name in basic many; do
+    # platform: guarded macOS-only call -- inside the Darwin-and-pkgbuild check that opens this block
     pkgbuild --root "$T/$name" --identifier test.stevedore.bom --version 1 --install-location / "$T/$name.pkg" >/dev/null 2>&1 \
-      && pkgutil --expand "$T/$name.pkg" "$T/$name.pb" \
       || { fail "could not make a pkgbuild Bom of the $name tree to compare with"; continue; }
+    # platform: guarded macOS-only call -- inside the Darwin-and-pkgbuild check that opens this block
+    pkgutil --expand "$T/$name.pkg" "$T/$name.pb" || { fail "pkgutil --expand rejects pkgbuild's pkg of the $name tree"; continue; }
     "$SD" bom --root "$T/$name" --mtime "$FIXTURE_MT" --out "$T/$name.fx.bom" || { fail "stevedore bom of the $name tree at the fixture mtime exited $?"; continue; }
     same_listing -p MUGsTfc
     same_listing
     same_listing -s
   done
+elif [ "${STEVEDORE_REQUIRE_ORACLE:-}" = 1 ]; then
+  fail "STEVEDORE_REQUIRE_ORACLE=1, but this host is not a Mac with pkgbuild to compare with, so that comparison did not run"
 fi
 
 mkdir "$T/ro"
