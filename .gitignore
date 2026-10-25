@@ -1,0 +1,6 @@
+/VERSION
+/dist/
+/.superpowers/
+/.idea/
+._*
+.DS_Store

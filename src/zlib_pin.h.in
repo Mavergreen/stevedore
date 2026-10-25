@@ -1,0 +1,6 @@
+#ifndef FP_ZLIB_PIN_H
+#define FP_ZLIB_PIN_H
+#ifndef FP_ZLIB_PINNED
+#define FP_ZLIB_PINNED "@STEVEDORE_ZLIB_VERSION@"
+#endif
+#endif

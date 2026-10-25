@@ -1,0 +1,22 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>Mavergreen/shipyard"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the zlib release stevedore builds its deflate from.",
+      "managerFilePatterns": ["/^components/zlib/version$/"],
+      "matchStrings": ["^(?<currentValue>.+?)\\s*$"],
+      "depNameTemplate": "madler/zlib",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Renovate moves components/zlib/version but cannot vouch for the new tarball, so the build fails at the fetch until components/zlib/sha256 is written for it.",
+      "matchDepNames": ["madler/zlib"],
+      "prBodyNotes": ["The build fails until components/zlib/sha256 matches the new tarball: run `sh build/pin-zlib.sh` on this branch (it checks GitHub's tarball against zlib.net's), regenerate tests/fixtures/gz with `sh tests/fixtures/gz/generate.sh` if the deflate output moved, and commit both."]
+    }
+  ]
+}
