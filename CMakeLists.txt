@@ -41,7 +41,7 @@ set_target_properties(stevedore_zlib PROPERTIES C_EXTENSIONS ON)
 
 configure_file(src/zlib_pin.h.in "${CMAKE_BINARY_DIR}/generated/zlib_pin.h" @ONLY)
 
-set(STEVEDORE_SOURCES src/main.c src/buf.c src/gz.c)
+set(STEVEDORE_SOURCES src/main.c src/buf.c src/gz.c src/tree.c src/cpio.c)
 
 add_executable(stevedore ${STEVEDORE_SOURCES})
 target_include_directories(stevedore PRIVATE src "${CMAKE_BINARY_DIR}/generated")
@@ -51,6 +51,9 @@ add_executable(stevedore-pin-mismatch ${STEVEDORE_SOURCES})
 target_include_directories(stevedore-pin-mismatch PRIVATE src "${CMAKE_BINARY_DIR}/generated")
 target_compile_definitions(stevedore-pin-mismatch PRIVATE FP_ZLIB_PINNED="0.0.0-not-the-pin")
 target_link_libraries(stevedore-pin-mismatch PRIVATE stevedore_zlib)
+
+add_executable(stevedore-cpio-limits tests/cpio-limits.c src/buf.c src/tree.c src/cpio.c)
+target_include_directories(stevedore-cpio-limits PRIVATE src)
 
 if(APPLE)
   mavericks_assert_binary_compatible(stevedore)
