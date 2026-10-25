@@ -1,0 +1,286 @@
+name: release
+
+on:
+  push:
+    branches-ignore: ['renovate/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      repackage:
+        description: "Publish a packaging-only .N+1 even though this declared state is released"
+        type: boolean
+        default: false
+      reconcile:
+        description: "Set by the nightly reconcile backstop"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# spec: shipyard SKILL.md "Release workflow" -- a run that can publish is alone in its group
+concurrency:
+  group: >-
+    release-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # spec: shipyard SKILL.md "Versioning" and "A release is a declared state, not an event" -- a push builds and
+  #       never publishes; a dispatch on main publishes when no release carries this declared state, or always
+  #       with repackage; repackage-on-ingredient-bump.yml and reconcile.yml are the dispatches that follow
+  #       an ingredient bump
+  ver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.ver.outputs.ver }}
+      publish: ${{ steps.ver.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: Mavergreen/shipyard/.github/actions/install@v1
+      - name: Version (YYYYMMDD.N) + publish decision
+        id: ver
+        env:
+          REPACKAGE: ${{ inputs.repackage }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          ver="$(sh "$SHIPYARD_SCRIPTS/self-upstream-version.sh")"
+          pub=no
+          if [ "$GITHUB_REF" = refs/heads/main ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if [ "$REPACKAGE" = true ]; then
+              pub=yes
+            else
+              digest="$(sh "$SHIPYARD_SCRIPTS/release-state.sh")"
+              answer="$(sh "$SHIPYARD_SCRIPTS/release-needed.sh" --digest "$digest" --version "$ver")"
+              echo "release-needed: $answer"
+              if [ "$answer" = PUBLISH ]; then pub=yes; fi
+            fi
+          fi
+          { echo "ver=$ver"; echo "publish=$pub"; } >> "$GITHUB_OUTPUT"
+          echo "version=$ver publish=$pub"
+
+  build-linux:
+    needs: ver
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+      - uses: Mavergreen/shipyard/.github/actions/install@v1
+      - name: Build out of tree
+        run: echo "MAVERICKS_BUILD_ROOT=$RUNNER_TEMP/mm-build" >> "$GITHUB_ENV"
+      - name: The suites read payloads with cpio
+        run: command -v cpio || { sudo apt-get update -qq && sudo apt-get install -y -qq cpio; }
+      - name: Pin the version the ver job resolved
+        env:
+          VER: ${{ needs.ver.outputs.version }}
+        run: printf '%s\n' "$VER" > VERSION
+      - name: Record the pre-build tree
+        run: sh "$SHIPYARD_SCRIPTS/assert-tree-clean.sh" --record
+      - name: Build the Linux stevedore and the x86_64 10.9 one with clang22's Linux archive
+        run: |
+          set -eu
+          L="$(STEVEDORE_TARGET=linux sh build/build.sh)"
+          D="$(STEVEDORE_TARGET=darwin sh build/build.sh)"
+          echo "STEVEDORE_LINUX=$L" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/cross-x86_64"
+          for b in stevedore stevedore-golden stevedore-pin-mismatch stevedore-component-limits stevedore-cpio-limits; do
+            cp "$D/$b" "$RUNNER_TEMP/cross-x86_64/"
+          done
+      - name: The Linux stevedore carries this version
+        env:
+          VER: ${{ needs.ver.outputs.version }}
+        run: |
+          got="$("$STEVEDORE_LINUX/stevedore" --version)"
+          [ "$got" = "stevedore $VER" ] || { echo "::error::the Linux stevedore says '$got', not 'stevedore $VER'"; exit 1; }
+      # spec: shipyard SKILL.md "Install layout and identity" and fetch_product_tar.sh -- the Linux deliverable is
+      #       opt/mavergreen/stevedore/ alone, owned by root, its mtimes HEAD's commit time, gzipped by stevedore
+      - name: Package the Linux tarball
+        env:
+          VER: ${{ needs.ver.outputs.version }}
+        run: |
+          set -eu
+          s="$RUNNER_TEMP/tar-stage"
+          rm -rf "$s"
+          mkdir -p "$s/opt/mavergreen/stevedore/bin" dist
+          cp "$STEVEDORE_LINUX/stevedore" "$s/opt/mavergreen/stevedore/bin/stevedore"
+          chmod 755 "$s/opt" "$s/opt/mavergreen" "$s/opt/mavergreen/stevedore" "$s/opt/mavergreen/stevedore/bin" \
+            "$s/opt/mavergreen/stevedore/bin/stevedore"
+          out="dist/stevedore-$VER-linux-x86_64.tar.gz"
+          tar --sort=name --format=ustar --owner=0 --group=0 --numeric-owner \
+            --mtime="@$(git log -1 --format=%ct)" -C "$s" -cf "$RUNNER_TEMP/stevedore.tar" opt
+          "$STEVEDORE_LINUX/stevedore" gzip < "$RUNNER_TEMP/stevedore.tar" > "$out"
+          tar -tzf "$out" > "$RUNNER_TEMP/listing"
+          printf '%s\n' opt/ opt/mavergreen/ opt/mavergreen/stevedore/ opt/mavergreen/stevedore/bin/ \
+            opt/mavergreen/stevedore/bin/stevedore > "$RUNNER_TEMP/want"
+          diff "$RUNNER_TEMP/want" "$RUNNER_TEMP/listing" || { echo "::error::the tarball holds more or less than opt/mavergreen/stevedore/bin/stevedore"; exit 1; }
+          echo "STEVEDORE_TARBALL=$PWD/$out" >> "$GITHUB_ENV"
+      - name: Shipyard's product-archive reader takes the tarball, as fetch_product_tar.sh will
+        run: |
+          set -eu
+          x="$RUNNER_TEMP/tarball/stevedore"
+          mkdir -p "$(dirname "$x")"
+          python3 "$SHIPYARD_SCRIPTS/product-tar.py" "$STEVEDORE_TARBALL" stevedore \
+            "$(sha256sum < "$STEVEDORE_TARBALL" | cut -c1-64)" "$x"
+          echo "STEVEDORE_FROM_TARBALL=$x/bin/stevedore" >> "$GITHUB_ENV"
+      - name: Every host-agnostic suite runs the tarball's stevedore, and none skips
+        run: STEVEDORE="$STEVEDORE_FROM_TARBALL" STEVEDORE_BUILD="$STEVEDORE_LINUX" sh "$SHIPYARD_SCRIPTS/run-repo-tests.sh" --strict-host
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-linux
+          path: dist/*.tar.gz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cross-x86_64
+          path: ${{ runner.temp }}/cross-x86_64
+          if-no-files-found: error
+      - name: The build must not have written into the source tree
+        run: sh "$SHIPYARD_SCRIPTS/assert-tree-clean.sh"
+
+  # spec: INGREDIENTS.md "Conformance deviations", macos-runner:package -- the pkg is built here until
+  #       stevedore packages itself, and the arm64 slice until shipyard's toolchain cross-builds arm64 on Linux
+  package:
+    needs: [ver, build-linux]
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: Mavergreen/shipyard/.github/actions/install@v1
+      - name: Build out of tree
+        run: echo "MAVERICKS_BUILD_ROOT=$RUNNER_TEMP/mm-build" >> "$GITHUB_ENV"
+      - name: Pin the version the ver job resolved
+        env:
+          VER: ${{ needs.ver.outputs.version }}
+        run: printf '%s\n' "$VER" > VERSION
+      - name: Record the pre-build tree
+        run: sh "$SHIPYARD_SCRIPTS/assert-tree-clean.sh" --record
+      - uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/mavergreen-pkgs/clang-22
+          key: clang22-cross-${{ hashFiles('components/clang22/version') }}
+      - uses: actions/download-artifact@v8
+        with: { name: cross-x86_64, path: "${{ runner.temp }}/cross-x86_64" }
+      - name: Build the arm64 stevedore with clang22-cross, and merge it with the x86_64 one
+        env:
+          ARCH: arm64
+        run: |
+          set -eu
+          A="$(sh build/build.sh)"
+          CL="$(sh build/fetch-clang22.sh)"
+          "$CL/bin/llvm-lipo" -create "$RUNNER_TEMP/cross-x86_64/stevedore" "$A/stevedore" -output "$RUNNER_TEMP/stevedore"
+          chmod 755 "$RUNNER_TEMP/stevedore"
+          { echo "LIPO=$CL/bin/llvm-lipo"; echo "OTOOL=$CL/bin/llvm-otool"; echo "NM=$CL/bin/llvm-nm"; echo "STRINGS=$CL/bin/llvm-strings"; } >> "$GITHUB_ENV"
+      - name: Both slices are 10.9-safe and record their pinned SDKs
+        env:
+          MAVERICKS_ALLOW_ARCHS: x86_64 arm64
+        run: sh "$SHIPYARD_SCRIPTS/assert_binary_compatible.sh" "$RUNNER_TEMP/stevedore"
+      - name: Package the universal pkg
+        run: sh build/package-pkg.sh "$RUNNER_TEMP/stevedore"
+      - uses: actions/download-artifact@v8
+        with: { name: dist-linux, path: dist }
+      - name: The pkg installs here, and its arm64 slice runs
+        env:
+          VER: ${{ needs.ver.outputs.version }}
+        run: |
+          set -eu
+          sudo installer -pkg "dist/stevedore-$VER.pkg" -target /
+          got="$(pkgutil --pkg-info dev.mavergreen.stevedore | sed -n 's/^version: //p')"
+          [ "$got" = "$VER" ] || { echo "::error::the receipt says $got, not $VER"; exit 1; }
+          got="$(/usr/local/mavergreen/bin/stevedore --version)"
+          [ "$got" = "stevedore $VER" ] || { echo "::error::the installed stevedore says '$got', not 'stevedore $VER'"; exit 1; }
+          [ "$(uname -m)" = arm64 ] && [ "$(arch)" = arm64 ] || { echo "::error::this runner is not running arm64 natively"; exit 1; }
+          /usr/local/bin/mavergreen check
+      - name: Ingredient pins are well declared
+        run: sh "$SHIPYARD_SCRIPTS/check-ingredient-pins.sh"
+      - name: Release notes
+        env:
+          VER: ${{ needs.ver.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sh "$SHIPYARD_SCRIPTS/release-notes.sh" --tag "$VER" --version "$VER" \
+            --product stevedore --min-os 10.9.5 --out dist/RELEASE_NOTES.md
+      - name: Record the declared state in the notes
+        run: |
+          set -eu
+          digest="$(sh "$SHIPYARD_SCRIPTS/release-state.sh")"
+          sh "$SHIPYARD_SCRIPTS/release-state-record.sh" --notes-file dist/RELEASE_NOTES.md --digest "$digest"
+      - name: Artifact conformance
+        env:
+          VER: ${{ needs.ver.outputs.version }}
+        run: |
+          set -eu
+          facts="$(sh "$SHIPYARD_SCRIPTS/artifact-facts.sh" dist "$VER")"
+          printf '%s\n' "$facts" | sh "$SHIPYARD_SCRIPTS/check-artifact-conformance.sh"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: stevedore
+          if-no-files-found: error
+          path: |
+            dist/*.pkg
+            dist/*.tar.gz
+            dist/build-info.txt
+            dist/RELEASE_NOTES.md
+      - name: The build must not have written into the source tree
+        run: sh "$SHIPYARD_SCRIPTS/assert-tree-clean.sh"
+
+  # spec: shipyard SKILL.md "Acceptance on real 10.9" (check 29) -- this run's own pkg, installed on Mac OS X 10.9,
+  #       and every suite run against the stevedore it installed
+  on-target:
+    needs: [ver, build-linux, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+      - uses: Mavergreen/shipyard/.github/actions/install@v1
+      - uses: actions/download-artifact@v8
+        with: { name: stevedore, path: dist }
+      - uses: actions/download-artifact@v8
+        with: { name: cross-x86_64, path: sd }
+      - name: The guest gets shipyard's scripts and the test helpers
+        run: |
+          chmod 755 sd/*
+          cp -R "$SHIPYARD_SCRIPTS" .shipyard-scripts
+      - name: Install the pkg on Mac OS X 10.9 and run every suite against the stevedore it installed
+        uses: Mavergreen/mavericks-vm@v1
+        env:
+          STEVEDORE_VERSION_UNDER_TEST: ${{ needs.ver.outputs.version }}
+        with:
+          image-key: ${{ secrets.MAVERICKS_VM_KEY }}
+          envs: STEVEDORE_VERSION_UNDER_TEST
+          copyback: false
+          run: |
+            set -eu
+            sw_vers
+            V="$STEVEDORE_VERSION_UNDER_TEST"
+            sudo -n true || { echo "the guest's user cannot sudo without a password, and installer needs root"; exit 1; }
+            sudo installer -pkg "dist/stevedore-$V.pkg" -target /
+            SD=/usr/local/mavergreen/stevedore/bin/stevedore
+            got="$(pkgutil --pkg-info dev.mavergreen.stevedore | sed -n 's/^version: //p')"
+            [ "$got" = "$V" ] || { echo "the receipt says $got, not $V"; exit 1; }
+            got="$("$SD" plist get /usr/local/mavergreen/stevedore/mavergreen.plist version)"
+            [ "$got" = "$V" ] || { echo "the installed manifest says $got, not $V"; exit 1; }
+            got="$(/usr/local/mavergreen/bin/stevedore --version)"
+            [ "$got" = "stevedore $V" ] || { echo "the installed stevedore says '$got', not 'stevedore $V'"; exit 1; }
+            /usr/local/bin/mavergreen check
+            rc=0
+            STEVEDORE="$SD" STEVEDORE_BUILD="$PWD/sd" SHIPYARD_SCRIPTS="$PWD/.shipyard-scripts" STEVEDORE_REQUIRE_ORACLE=1 \
+              sh .shipyard-scripts/run-repo-tests.sh --strict-host > tests.log 2>&1 || rc=$?
+            cat tests.log
+            [ "$rc" -eq 0 ] || exit 1
+            if grep '^SKIP ' tests.log; then echo "a suite skipped on 10.9, where every one of them must run"; exit 1; fi
+
+  publish:
+    needs: [ver, package, on-target]
+    if: needs.ver.outputs.publish == 'yes' && github.ref == 'refs/heads/main'
+    permissions: { contents: write }
+    uses: Mavergreen/shipyard/.github/workflows/publish-release.yml@v1
+    with: { version: "${{ needs.ver.outputs.version }}", artifact: stevedore }
