@@ -183,8 +183,16 @@ jobs:
         env:
           MAVERICKS_ALLOW_ARCHS: x86_64 arm64
         run: sh "$SHIPYARD_SCRIPTS/assert_binary_compatible.sh" "$RUNNER_TEMP/stevedore"
+      - name: Build the universal Sparkle updater
+        run: |
+          set -eu
+          app="$(sh build/build-updater.sh)"
+          feed="$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$app/Contents/Info.plist")"
+          [ "$feed" = https://github.com/Mavergreen/stevedore/releases/latest/download/stevedore.xml ] \
+            || { echo "::error::the updater polls $feed, not stevedore's feed"; exit 1; }
+          echo "STEVEDORE_UPDATER=$app" >> "$GITHUB_ENV"
       - name: Package the universal pkg
-        run: sh build/package-pkg.sh "$RUNNER_TEMP/stevedore"
+        run: sh build/package-pkg.sh "$RUNNER_TEMP/stevedore" "$STEVEDORE_UPDATER"
       - uses: actions/download-artifact@v8
         with: { name: dist-linux, path: dist }
       - name: The pkg installs here, and its arm64 slice runs
@@ -198,6 +206,9 @@ jobs:
           got="$(/usr/local/mavergreen/bin/stevedore --version)"
           [ "$got" = "stevedore $VER" ] || { echo "::error::the installed stevedore says '$got', not 'stevedore $VER'"; exit 1; }
           [ "$(uname -m)" = arm64 ] && [ "$(arch)" = arm64 ] || { echo "::error::this runner is not running arm64 natively"; exit 1; }
+          upd="/Library/Application Support/Mavergreen/stevedore-updater.app"
+          got="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$upd/Contents/Info.plist")"
+          [ "$got" = "$VER" ] || { echo "::error::the installed updater says $got, not $VER"; exit 1; }
           /usr/local/bin/mavergreen check
       - name: Ingredient pins are well declared
         run: sh "$SHIPYARD_SCRIPTS/check-ingredient-pins.sh"
@@ -213,6 +224,24 @@ jobs:
           set -eu
           digest="$(sh "$SHIPYARD_SCRIPTS/release-state.sh")"
           sh "$SHIPYARD_SCRIPTS/release-state-record.sh" --notes-file dist/RELEASE_NOTES.md --digest "$digest"
+      - name: Sign the pkg and write its feed
+        if: needs.ver.outputs.publish == 'yes'
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          VER: ${{ needs.ver.outputs.version }}
+        run: |
+          set -eu
+          printenv SPARKLE_PRIVATE_KEY | grep -q . || { echo "::error::SPARKLE_PRIVATE_KEY is not visible to this repo"; exit 1; }
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/$VER"
+          sh "$SHIPYARD_SCRIPTS/sign_and_appcast.sh" --product stevedore --feed-dir dist \
+            --channel-title "stevedore for Mavericks" --version "$VER" --pkg-url "$base/stevedore-$VER.pkg" \
+            --notes-file dist/RELEASE_NOTES.md --pkg "dist/stevedore-$VER.pkg" --min-os 10.9.5
+      - name: Unsigned stand-in feed (never published)
+        if: needs.ver.outputs.publish != 'yes'
+        env:
+          VER: ${{ needs.ver.outputs.version }}
+        run: sh "$SHIPYARD_SCRIPTS/stand-in-feeds.sh" dist "$VER"
       - name: Artifact conformance
         env:
           VER: ${{ needs.ver.outputs.version }}
@@ -220,6 +249,13 @@ jobs:
           set -eu
           facts="$(sh "$SHIPYARD_SCRIPTS/artifact-facts.sh" dist "$VER")"
           printf '%s\n' "$facts" | sh "$SHIPYARD_SCRIPTS/check-artifact-conformance.sh"
+      - name: The feed is an upgrade
+        if: needs.ver.outputs.publish == 'yes'
+        env:
+          VER: ${{ needs.ver.outputs.version }}
+        run: |
+          sh "$SHIPYARD_SCRIPTS/assert_appcast_upgradeable.sh" --appcast dist/stevedore.xml \
+            --version "$VER" --tag-glob '[0-9]*.[0-9]*'
       - uses: actions/upload-artifact@v7
         with:
           name: stevedore
@@ -229,6 +265,7 @@ jobs:
             dist/*.tar.gz
             dist/build-info.txt
             dist/RELEASE_NOTES.md
+            dist/*.xml
       - name: The build must not have written into the source tree
         run: sh "$SHIPYARD_SCRIPTS/assert-tree-clean.sh"
 
@@ -275,6 +312,9 @@ jobs:
             [ "$got" = "$V" ] || { echo "the installed manifest says $got, not $V"; exit 1; }
             got="$(/usr/local/mavergreen/bin/stevedore --version)"
             [ "$got" = "stevedore $V" ] || { echo "the installed stevedore says '$got', not 'stevedore $V'"; exit 1; }
+            got="$("$SD" plist get "/Library/Application Support/Mavergreen/stevedore-updater.app/Contents/Info.plist" CFBundleShortVersionString)"
+            [ "$got" = "$V" ] || { echo "the installed updater says $got, not $V"; exit 1; }
+            [ -f /Library/LaunchAgents/dev.mavergreen.stevedore-updatecheck.plist ] || { echo "the updater's daily check is not installed"; exit 1; }
             /usr/local/bin/mavergreen check
             rc=0
             STEVEDORE="$SD" STEVEDORE_BUILD="$PWD/sd" SHIPYARD_SCRIPTS="$PWD/.shipyard-scripts" STEVEDORE_REQUIRE_ORACLE=1 \
@@ -283,8 +323,18 @@ jobs:
             [ "$rc" -eq 0 ] || exit 1
             if grep '^SKIP ' tests.log; then echo "a suite skipped on 10.9, where every one of them must run"; exit 1; fi
 
+  # spec: shipyard SKILL.md "Sparkle updater" -- no log of a signing run, and no file about to be released,
+  #       carries a piece of the key; a build that fails after signing left logs too
+  scan:
+    needs: [ver, package]
+    if: always() && needs.ver.outputs.publish == 'yes' && github.ref == 'refs/heads/main'
+    permissions: { actions: read, contents: read }
+    uses: Mavergreen/shipyard/.github/workflows/scan-for-key.yml@v1
+    with: { artifact: stevedore }
+    secrets: { SPARKLE_PRIVATE_KEY: "${{ secrets.SPARKLE_PRIVATE_KEY }}" }
+
   publish:
-    needs: [ver, package, on-target]
+    needs: [ver, package, on-target, scan]
     if: needs.ver.outputs.publish == 'yes' && github.ref == 'refs/heads/main'
     permissions: { contents: write }
     uses: Mavergreen/shipyard/.github/workflows/publish-release.yml@v1

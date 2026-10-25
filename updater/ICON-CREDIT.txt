@@ -1,0 +1,8 @@
+Updater icon: NONE. stevedore-updater ships the standard macOS application icon by explicit opt-in
+(ALLOW_GENERIC), so no artwork is embedded.
+
+Deliberate: there is no stevedore artwork yet, and a stand-in .icns would be exactly the placeholder
+the icon gate rejects.
+
+Exit: when an original Mavergreen stevedore mark exists, add updater/stevedore.icns, pass ICON to
+mavericks_add_updater_app, and drop ALLOW_GENERIC.

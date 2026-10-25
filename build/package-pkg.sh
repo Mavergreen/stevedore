@@ -1,25 +1,30 @@
 #!/bin/sh
 # platform: macOS-only -- shipyard's stage_product.sh, build_component_pkg.sh and set_install_floor.sh run PlistBuddy, pkgbuild and productbuild
-#   usage: sh build/package-pkg.sh BINARY
-#          Writes dist/stevedore-<VER>.pkg, installing BINARY as /usr/local/mavergreen/stevedore/bin/stevedore,
-#          and dist/build-info.txt; VER is the first line of ./VERSION. BINARY must carry exactly the
-#          x86_64 and arm64 slices. Prints the pkg's path.
+#   usage: sh build/package-pkg.sh BINARY UPDATER_APP
+#          Writes dist/stevedore-<VER>.pkg, installing BINARY as /usr/local/mavergreen/stevedore/bin/stevedore
+#          and UPDATER_APP (build/build-updater.sh's stevedore-updater.app) as stevedore's Sparkle updater,
+#          and dist/build-info.txt; VER is the first line of ./VERSION. BINARY and the updater's executable
+#          must each carry exactly the x86_64 and arm64 slices. Prints the pkg's path.
 set -eu
 SELF="$(cd "$(dirname "$0")" && pwd)"
 STEVEDORE_ROOT="$(dirname "$SELF")"
 . "$SELF/lib.sh"
 . "$SELF/msc.sh"
 cd "$STEVEDORE_ROOT"
-[ $# -eq 1 ] || { echo "usage: sh build/package-pkg.sh BINARY" >&2; exit 2; }
-BIN="$1"
+[ $# -eq 2 ] || { echo "usage: sh build/package-pkg.sh BINARY UPDATER_APP" >&2; exit 2; }
+BIN="$1"; APP="${2%/}"
 [ -f "$BIN" ] && [ -x "$BIN" ] || { echo "package-pkg: no executable at $BIN" >&2; exit 1; }
+[ "$(basename "$APP")" = stevedore-updater.app ] && [ -x "$APP/Contents/MacOS/stevedore-updater" ] \
+  || { echo "package-pkg: $APP is not a stevedore-updater.app" >&2; exit 1; }
 [ -f VERSION ] || { echo "package-pkg: no VERSION file; the release workflow's ver job writes it" >&2; exit 1; }
 VER="$(sed -n 1p VERSION | tr -d ' \t')"
 [ -n "$VER" ] || { echo "package-pkg: VERSION is empty" >&2; exit 1; }
 LIPO="${LIPO:-$(sh "$SELF/fetch-clang22.sh")/bin/llvm-lipo}"
-raw="$("$LIPO" -archs "$BIN")" || { echo "package-pkg: $LIPO cannot read $BIN" >&2; exit 1; }
-archs="$(printf '%s\n' $raw | LC_ALL=C sort | tr '\n' ' ')"
-[ "$archs" = "arm64 x86_64 " ] || { echo "package-pkg: $BIN carries [$raw], not exactly arm64 and x86_64" >&2; exit 1; }
+for m in "$BIN" "$APP/Contents/MacOS/stevedore-updater"; do
+  raw="$("$LIPO" -archs "$m")" || { echo "package-pkg: $LIPO cannot read $m" >&2; exit 1; }
+  archs="$(printf '%s\n' $raw | LC_ALL=C sort | tr '\n' ' ')"
+  [ "$archs" = "arm64 x86_64 " ] || { echo "package-pkg: $m carries [$raw], not exactly arm64 and x86_64" >&2; exit 1; }
+done
 got="$("$BIN" --version 2>/dev/null || :)"
 [ "$got" = "stevedore $VER" ] || { echo "package-pkg: $BIN --version says '$got', not 'stevedore $VER'" >&2; exit 1; }
 
@@ -35,7 +40,7 @@ cp "$BIN" "$P/bin/stevedore"
 chmod 755 "$P/bin/stevedore"
 
 sh "$SHIPYARD_SCRIPTS/stage_product.sh" --stage "$WORK/root" --product stevedore \
-  --name "stevedore for Mavericks" --version "$VER" --scripts-out "$WORK/scripts" >&2
+  --name "stevedore for Mavericks" --version "$VER" --updater-app "$APP" --scripts-out "$WORK/scripts" >&2
 sh "$SHIPYARD_SCRIPTS/build_component_pkg.sh" --root "$WORK/root" --identifier dev.mavergreen.stevedore \
   --version "$VER" --install-location / --scripts "$WORK/scripts" --out "$WORK/component.pkg" >&2
 

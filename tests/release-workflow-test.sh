@@ -8,7 +8,8 @@
 #   opt/mavergreen/stevedore/ alone and passes shipyard's product-archive reader; no run: block holds ${{ }}; no
 #   job anywhere runs on a macOS runner without a macos-runner:<job> deviation; and an ingredient in INGREDIENTS.md's
 #   Declared state is exactly what repackage-on-ingredient-bump.yml watches. Each check is shown to refuse a
-#   mutated copy.
+#   mutated copy. The package job also builds the Sparkle updater into the pkg and signs it, and a key scan precedes
+#   publish.
 set -eu
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -46,8 +47,12 @@ shape() {
     && [ "$(awk '/pub=no/ { n = NR } /pub=yes/ { y = NR } END { print (n && y > n) }' "$T/ver")" = 1 ] \
     || { echo "the ver job can publish from something other than a dispatch on main"; return 1; }
   job "$1" publish > "$T/publish"
-  grep -qx '    needs: \[ver, package, on-target\]' "$T/publish" \
-    || { echo "publish does not wait for the package and on-target jobs"; return 1; }
+  grep -qx '    needs: \[ver, package, on-target, scan\]' "$T/publish" \
+    || { echo "publish does not wait for the package, on-target and key-scan jobs"; return 1; }
+  job "$1" scan > "$T/scan"
+  grep -qx '    uses: Mavergreen/shipyard/.github/workflows/scan-for-key.yml@v1' "$T/scan" \
+    && grep -qxF "    if: always() && needs.ver.outputs.publish == 'yes' && github.ref == 'refs/heads/main'" "$T/scan" \
+    || { echo "the key scan is not shipyard's, run whenever a publishing run signed"; return 1; }
   grep -qxF "    if: needs.ver.outputs.publish == 'yes' && github.ref == 'refs/heads/main'" "$T/publish" \
     || { echo "publish does not ask for the ver job's yes on main"; return 1; }
   grep -qx '    uses: Mavergreen/shipyard/.github/workflows/publish-release.yml@v1' "$T/publish" \
@@ -63,6 +68,11 @@ shape() {
     && grep -qF 'llvm-lipo" -create' "$T/package" \
     && grep -qF 'MAVERICKS_ALLOW_ARCHS: x86_64 arm64' "$T/package" \
     || { echo "the package job does not merge both slices, guard them and package them"; return 1; }
+  grep -qF 'app="$(sh build/build-updater.sh)"' "$T/package" \
+    && grep -qF 'sh build/package-pkg.sh "$RUNNER_TEMP/stevedore" "$STEVEDORE_UPDATER"' "$T/package" \
+    && grep -qF 'sh "$SHIPYARD_SCRIPTS/sign_and_appcast.sh" --product stevedore --feed-dir dist' "$T/package" \
+    && grep -qF 'sh "$SHIPYARD_SCRIPTS/stand-in-feeds.sh" dist "$VER"' "$T/package" \
+    || { echo "the package job does not build the updater into the pkg and sign it, or stand in its feed"; return 1; }
   job "$1" build-linux > "$T/linux"
   grep -qF 'opt/mavergreen/stevedore/bin/stevedore > "$RUNNER_TEMP/want"' "$T/linux" \
     && grep -qF 'python3 "$SHIPYARD_SCRIPTS/product-tar.py" "$STEVEDORE_TARBALL" stevedore' "$T/linux" \
@@ -103,8 +113,12 @@ mutant "Renovate PRs left unpackaged" "does not skip a same-repo PR" W "s/ || st
 mutant "a push to main that publishes" "other than a dispatch on main" W 's/ && \[ "$GITHUB_EVENT_NAME" = workflow_dispatch \]//'
 mutant "a dispatch on any ref" "other than a dispatch on main" W 's/\[ "$GITHUB_REF" = refs\/heads\/main \] && //'
 mutant "a publish decided before the guard" "other than a dispatch on main" W 's/^          pub=no$/          pub=yes/'
-mutant "a publish without the 10.9 job" "does not wait" W 's/^    needs: \[ver, package, on-target\]$/    needs: [ver, package]/'
-mutant "a publish off main" "yes on main" W "s/ \&\& github.ref == 'refs\/heads\/main'//"
+mutant "a publish without the 10.9 job" "does not wait" W 's/^    needs: \[ver, package, on-target, scan\]$/    needs: [ver, package, scan]/'
+mutant "a publish without the key scan" "does not wait" W 's/^    needs: \[ver, package, on-target, scan\]$/    needs: [ver, package, on-target]/'
+mutant "a scan skipped after a failed signing run" "the key scan is not" W "s/^    if: always() \&\& needs.ver/    if: needs.ver/"
+mutant "a pkg without the updater" "does not build the updater" W 's/"$RUNNER_TEMP\/stevedore" "$STEVEDORE_UPDATER"/"$RUNNER_TEMP\/stevedore"/'
+mutant "an unsigned release" "does not build the updater" W '/sign_and_appcast.sh" --product stevedore/d'
+mutant "a publish off main" "yes on main" W "/^  publish:\$/,\$s/ \&\& github.ref == 'refs\/heads\/main'//"
 mutant "a hand-rolled publish" "is not shipyard's" W 's|publish-release.yml@v1|publish-release.yml@main|'
 mutant "an on-target that installs nothing" "does not install this run's pkg" W '/sudo installer -pkg "dist\/stevedore-$V.pkg"/d'
 mutant "an on-target that tests the build, not the pkg" "does not install this run's pkg" W 's/STEVEDORE="$SD" STEVEDORE_BUILD/STEVEDORE_BUILD/'
