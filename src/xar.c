@@ -93,6 +93,9 @@ iso8601(long t, char out[32])
 struct wnode {
 	const char *name;
 	size_t namelen, entry, child, last, next;
+	unsigned long id;
+	unsigned long long offset, length;
+	char archived[2 * FP_SHA1_LEN + 1], extracted[2 * FP_SHA1_LEN + 1];
 };
 
 struct writer {
@@ -221,39 +224,56 @@ put_owner(struct writer *w, int depth, unsigned mode)
 }
 
 static int
-put_data(struct writer *w, int depth, const struct fp_xar_entry *e)
+heap_node(struct writer *w, size_t i)
 {
+	struct wnode *nd = &w->node[i];
+	const struct fp_xar_entry *e;
 	unsigned char sum[FP_SHA1_LEN];
-	char archived[2 * FP_SHA1_LEN + 1], extracted[2 * FP_SHA1_LEN + 1];
-	size_t start = w->heap.len;
-	unsigned long long offset = start, length;
+	size_t c;
 
+	nd->id = ++w->id;
+	if (nd->entry == NONE) {
+		for (c = nd->child; c != NONE; c = w->node[c].next)
+			if (heap_node(w, c) != 0)
+				return -1;
+		return 0;
+	}
+	e = &w->e[nd->entry];
+	nd->offset = w->heap.len;
 	if (e->enc == FP_ENC_ZLIB) {
 		if (fp_zlib(e->data, e->len, &w->heap) != 0)
 			return -1;
 	} else if (fp_buf_append(&w->heap, e->data, e->len) != 0) {
 		return -1;
 	}
-	length = w->heap.len - start;
-	fp_sha1(w->heap.p + start, (size_t)length, sum);
-	fp_sha1_hex(sum, archived);
+	nd->length = w->heap.len - nd->offset;
+	fp_sha1(w->heap.p + nd->offset, (size_t)nd->length, sum);
+	fp_sha1_hex(sum, nd->archived);
 	fp_sha1(e->data, e->len, sum);
-	fp_sha1_hex(sum, extracted);
+	fp_sha1_hex(sum, nd->extracted);
+	return 0;
+}
+
+static int
+put_data(struct writer *w, int depth, const struct wnode *nd)
+{
+	const struct fp_xar_entry *e = &w->e[nd->entry];
+
 	if (put(&w->toc, depth, "<data>\n")
-	    || put(&w->toc, depth + 1, "<archived-checksum style=\"sha1\">%s</archived-checksum>\n", archived)
-	    || put(&w->toc, depth + 1, "<extracted-checksum style=\"sha1\">%s</extracted-checksum>\n", extracted))
+	    || put(&w->toc, depth + 1, "<archived-checksum style=\"sha1\">%s</archived-checksum>\n", nd->archived)
+	    || put(&w->toc, depth + 1, "<extracted-checksum style=\"sha1\">%s</extracted-checksum>\n", nd->extracted))
 		return -1;
 	if (e->enc == FP_ENC_ZLIB) {
 		if (put(&w->toc, depth + 1, "<encoding style=\"application/x-gzip\"/>\n")
 		    || put(&w->toc, depth + 1, "<size>%llu</size>\n", (unsigned long long)e->len)
-		    || put(&w->toc, depth + 1, "<offset>%llu</offset>\n", offset))
+		    || put(&w->toc, depth + 1, "<offset>%llu</offset>\n", nd->offset))
 			return -1;
 	} else if (put(&w->toc, depth + 1, "<size>%llu</size>\n", (unsigned long long)e->len)
-	    || put(&w->toc, depth + 1, "<offset>%llu</offset>\n", offset)
+	    || put(&w->toc, depth + 1, "<offset>%llu</offset>\n", nd->offset)
 	    || put(&w->toc, depth + 1, "<encoding style=\"application/octet-stream\"/>\n")) {
 		return -1;
 	}
-	return put(&w->toc, depth + 1, "<length>%llu</length>\n", length)
+	return put(&w->toc, depth + 1, "<length>%llu</length>\n", nd->length)
 	    || put(&w->toc, depth, "</data>\n");
 }
 
@@ -263,7 +283,7 @@ put_node(struct writer *w, size_t i, int depth)
 	const struct wnode *nd = &w->node[i];
 	size_t c;
 
-	if (put(&w->toc, depth, "<file id=\"%lu\">\n", ++w->id)
+	if (put(&w->toc, depth, "<file id=\"%lu\">\n", nd->id)
 	    || put(&w->toc, depth + 1, "<name>")
 	    || put_escaped(&w->toc, nd->name, nd->namelen)
 	    || put(&w->toc, 0, "</name>\n")
@@ -271,7 +291,7 @@ put_node(struct writer *w, size_t i, int depth)
 	    || put_owner(w, depth + 1, nd->entry == NONE ? 0700 : 0644))
 		return -1;
 	if (nd->entry != NONE) {
-		if (put_data(w, depth + 1, &w->e[nd->entry]) != 0)
+		if (put_data(w, depth + 1, nd) != 0)
 			return -1;
 	} else {
 		for (c = nd->child; c != NONE; c = w->node[c].next)
@@ -292,13 +312,13 @@ put_be(struct fp_buf *b, unsigned long long v, int bytes)
 	return fp_buf_append(b, p, (size_t)bytes);
 }
 
-int
-fp_xar_write(const struct fp_xar_entry *e, size_t n, long mtime, struct fp_buf *out)
+static int
+xar_write(const struct fp_xar_entry *e, size_t n, long mtime, int reverse_top, struct fp_buf *out)
 {
 	struct writer w;
 	struct fp_buf z = { 0 };
 	unsigned char sum[FP_SHA1_LEN];
-	size_t i, c, start = out->len, cap = 1;
+	size_t i, c, start = out->len, cap = 1, ntop = 0, *top = NULL;
 	int rc = -1;
 
 	memset(&w, 0, sizeof w);
@@ -325,8 +345,15 @@ fp_xar_write(const struct fp_xar_entry *e, size_t n, long mtime, struct fp_buf *
 	    || put(&w.toc, 2, "</checksum>\n")
 	    || put(&w.toc, 2, "<creation-time>%s</creation-time>\n", w.when))
 		goto nomem;
-	for (c = w.node[0].child; c != NONE; c = w.node[c].next)
-		if (put_node(&w, c, 2) != 0)
+	for (c = w.node[0].child; c != NONE; c = w.node[c].next, ntop++)
+		if (heap_node(&w, c) != 0)
+			goto nomem;
+	if ((top = malloc((ntop ? ntop : 1) * sizeof *top)) == NULL)
+		goto nomem;
+	for (i = 0, c = w.node[0].child; c != NONE; c = w.node[c].next, i++)
+		top[reverse_top ? ntop - 1 - i : i] = c;
+	for (i = 0; i < ntop; i++)
+		if (put_node(&w, top[i], 2) != 0)
 			goto nomem;
 	if (put(&w.toc, 1, "</toc>\n") || put(&w.toc, 0, "</xar>\n") || fp_zlib(w.toc.p, w.toc.len, &z) != 0)
 		goto nomem;
@@ -341,11 +368,24 @@ nomem:
 	out->len = start;
 	rc = oom();
 done:
+	free(top);
 	free(w.node);
 	fp_buf_free(&w.toc);
 	fp_buf_free(&w.heap);
 	fp_buf_free(&z);
 	return rc;
+}
+
+int
+fp_xar_write(const struct fp_xar_entry *e, size_t n, long mtime, struct fp_buf *out)
+{
+	return xar_write(e, n, mtime, 0, out);
+}
+
+int
+fp_xar_write_product(const struct fp_xar_entry *e, size_t n, long mtime, struct fp_buf *out)
+{
+	return xar_write(e, n, mtime, 1, out);
 }
 
 struct xnode {

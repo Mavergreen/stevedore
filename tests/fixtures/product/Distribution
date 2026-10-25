@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<installer-gui-script minSpecVersion="1">
+    <title>Stevedore Test</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="license.txt"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <allowed-os-versions>
+        <os-version min="10.9.5"/>
+    </allowed-os-versions>
+    <options customize="never" require-scripts="true" hostArchitectures="x86_64"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="dev.mavergreen.base"/>
+            <line choice="dev.mavergreen.stevedore-test.product"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="dev.mavergreen.base" visible="false">
+        <pkg-ref id="dev.mavergreen.base"/>
+    </choice>
+    <choice id="dev.mavergreen.stevedore-test.product" visible="false">
+        <pkg-ref id="dev.mavergreen.stevedore-test.product"/>
+    </choice>
+    <pkg-ref id="dev.mavergreen.base" version="1.0.5" onConclusion="none" installKBytes="2" updateKBytes="0">#mavergreen-base.pkg</pkg-ref>
+    <pkg-ref id="dev.mavergreen.stevedore-test.product" version="2.0" onConclusion="none" installKBytes="23" updateKBytes="0">#product.pkg</pkg-ref>
+    <pkg-ref id="dev.mavergreen.base">
+        <bundle-version/>
+    </pkg-ref>
+    <pkg-ref id="dev.mavergreen.stevedore-test.product">
+        <bundle-version>
+            <bundle CFBundleShortVersionString="2.4.1" CFBundleVersion="241" id="org.mavergreen.example" path="Library/Application Support/Mavergreen/t-updater.app"/>
+            <bundle CFBundleShortVersionString="1.27.3" CFBundleVersion="1.108" id="org.sparkle-project.Sparkle" path="Library/Application Support/Mavergreen/t-updater.app/Contents/Frameworks/Sparkle.framework"/>
+            <bundle CFBundleShortVersionString="1.27.3" CFBundleVersion="1.108" id="org.sparkle-project.Sparkle.Autoupdate" path="Library/Application Support/Mavergreen/t-updater.app/Contents/Frameworks/Sparkle.framework/Versions/A/Resources/Autoupdate.app"/>
+            <bundle id="dev.mavergreen.test.flat" path="Library/Flat.bundle"/>
+            <bundle CFBundleShortVersionString="2" id="dev.mavergreen.test.old" path="Library/Frameworks/Old.framework"/>
+            <bundle CFBundleVersion="7.0.1" SourceVersion="70001000000000" BuildVersion="3" id="dev.mavergreen.test.plugin" path="Library/Plug-ins/T.plugin"/>
+            <bundle CFBundleVersion="1&amp;&quot;2" id="a&amp;b&lt;c>&quot;d'é" path="Library/Sp&amp;c &lt;x>.bundle"/>
+        </bundle-version>
+    </pkg-ref>
+</installer-gui-script>

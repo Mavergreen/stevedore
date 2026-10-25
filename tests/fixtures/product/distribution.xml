@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>Stevedore Test</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="license.txt"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <allowed-os-versions><os-version min="10.9.5"/></allowed-os-versions>
+    <options customize="never" require-scripts="true" hostArchitectures="x86_64"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="dev.mavergreen.base"/>
+            <line choice="dev.mavergreen.stevedore-test.product"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="dev.mavergreen.base" visible="false"><pkg-ref id="dev.mavergreen.base"/></choice>
+    <choice id="dev.mavergreen.stevedore-test.product" visible="false"><pkg-ref id="dev.mavergreen.stevedore-test.product"/></choice>
+    <pkg-ref id="dev.mavergreen.base" version="0" onConclusion="none">mavergreen-base.pkg</pkg-ref>
+    <pkg-ref id="dev.mavergreen.stevedore-test.product" version="0" onConclusion="none">product.pkg</pkg-ref>
+</installer-gui-script>

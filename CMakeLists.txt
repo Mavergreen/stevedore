@@ -49,7 +49,7 @@ file(STRINGS "${STEVEDORE_VERSION_FILE}" STEVEDORE_VERSION LIMIT_COUNT 1)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${STEVEDORE_VERSION_FILE}")
 
 set(STEVEDORE_SOURCES src/main.c src/buf.c src/cli.c src/gz.c src/tree.c src/cpio.c src/bom.c src/plist.c
-  src/sha1.c src/xar.c src/component.c)
+  src/sha1.c src/xar.c src/component.c src/xml.c src/product.c)
 
 add_executable(stevedore ${STEVEDORE_SOURCES})
 target_include_directories(stevedore PRIVATE src "${CMAKE_BINARY_DIR}/generated")

@@ -18,6 +18,7 @@
 #include "cpio.h"
 #include "gz.h"
 #include "plist.h"
+#include "product.h"
 #include "tree.h"
 #include "xar.h"
 
@@ -30,6 +31,7 @@ usage(void)
 	    "       stevedore payload --root DIR --mtime EPOCH --out FILE\n"
 	    "       stevedore bom --root DIR --mtime EPOCH --out FILE\n"
 	    "       " FP_COMPONENT_USAGE
+	    "       " FP_PRODUCT_USAGE
 	    "       stevedore plist get FILE KEYPATH         (scalars only: a dict or array exits 3)\n"
 	    "       stevedore plist has FILE KEYPATH\n"
 	    "       stevedore plist set FILE KEYPATH string|integer|real|bool VALUE\n"
@@ -515,6 +517,8 @@ main(int argc, char **argv)
 		return payload(argc, argv);
 	if (strcmp(argv[1], "plist") == 0)
 		return plist(argc, argv);
+	if (strcmp(argv[1], "product") == 0)
+		return fp_product(argc, argv);
 	if (strcmp(argv[1], "component") == 0)
 		return fp_component(argc, argv);
 	if (argc == 2 && strcmp(argv[1], "--version") == 0)

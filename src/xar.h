@@ -41,6 +41,7 @@ struct fp_xar {
 typedef int (*fp_xar_sink)(void *ctx, const unsigned char *p, size_t n);
 
 int fp_xar_write(const struct fp_xar_entry *e, size_t n, long mtime, struct fp_buf *out);
+int fp_xar_write_product(const struct fp_xar_entry *e, size_t n, long mtime, struct fp_buf *out);
 int fp_xar_read(const char *path, struct fp_xar *x);
 int fp_xar_check_safe(const struct fp_xar *x);
 int fp_xar_extract(struct fp_xar *x, size_t i, fp_xar_sink sink, void *ctx);
