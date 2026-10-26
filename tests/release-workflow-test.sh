@@ -13,6 +13,7 @@
 #   with it, INGREDIENTS.md no longer gives the bootstrap as a reason for the macOS runner, and the stevedore
 #   self-pin is declared as a deviation and is in no ingredient list, trigger, bot or Renovate manager.
 #   The package job compares its pkg with pkgbuild and productbuild (build/oracle-pkg.sh), and the macOS-runner deviation names every macOS dependency.
+#   ci.yml's vm-test and release.yml's on-target give the 10.9 guest shipyard's whole tree, not its scripts/ alone.
 set -eu
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -21,7 +22,8 @@ trap 'rm -rf "$T"' EXIT
 W="$REPO/.github/workflows/release.yml"
 R="$REPO/.github/workflows/repackage-on-ingredient-bump.yml"
 I="$REPO/INGREDIENTS.md"
-for f in "$W" "$R" "$I"; do [ -f "$f" ] || fail "$f does not exist"; done
+C="$REPO/.github/workflows/ci.yml"
+for f in "$W" "$R" "$I" "$C"; do [ -f "$f" ] || fail "$f does not exist"; done
 
 job() {  # job <workflow> <name> -- the job's lines
   awk -v j="  $2:" '$0 == j { on = 1; next } on && /^  [a-z]/ { exit } on { print }' "$1"
@@ -34,7 +36,7 @@ macos_jobs() {  # macos_jobs <workflow>... -- the jobs that run on a macOS runne
   done
 }
 
-# platform: shape <release.yml> <repackage caller> <INGREDIENTS.md> prints the first invariant they break, and fails.
+# platform: shape <release.yml> <repackage caller> <INGREDIENTS.md> <ci.yml> prints the first invariant they break, and fails.
 shape() {
   _on="$(awk '/^on:/ { on = 1; next } on && /^[^ #]/ { exit } on && /^  [a-z_]+:/ { print $1 }' "$1" | tr '\n' ' ')"
   [ "$_on" = "push: pull_request: workflow_dispatch: " ] || { echo "on: is not push, pull_request and workflow_dispatch: [$_on]"; return 1; }
@@ -66,6 +68,14 @@ shape() {
     && grep -qF 'STEVEDORE="$SD" STEVEDORE_BUILD="$PWD/sd"' "$T/on-target" \
     && grep -qF 'run-repo-tests.sh --strict-host' "$T/on-target" \
     || { echo "on-target does not install this run's pkg on 10.9 and run the suites against what it installed"; return 1; }
+  for _g in "$1 on-target" "$4 vm-test"; do
+    job ${_g% *} ${_g#* } > "$T/guest"
+    grep -qxF '          cp -R "$(dirname "$SHIPYARD_SCRIPTS")" .shipyard' "$T/guest" \
+      && grep -qF 'SHIPYARD_SCRIPTS="$PWD/.shipyard/scripts"' "$T/guest" \
+      && grep -qF 'sh .shipyard/scripts/run-repo-tests.sh --strict-host' "$T/guest" \
+      && ! grep -qF 'cp -R "$SHIPYARD_SCRIPTS"' "$T/guest" \
+      || { echo "the ${_g#* } job does not give the 10.9 guest shipyard's whole tree"; return 1; }
+  done
   job "$1" package > "$T/package"
   grep -qF 'sh build/package-pkg.sh "$RUNNER_TEMP/stevedore"' "$T/package" \
     && grep -qF 'llvm-lipo" -create' "$T/package" \
@@ -94,7 +104,7 @@ shape() {
     { r = 0 }
     /^ *(- )?run:/ { ri = ind($0); r = 1; if (index($0, "${{")) print NR ": " $0 }' "$1")"
   [ -z "$_run" ] || { echo "a run: block holds \${{ }}: $_run"; return 1; }
-  for _j in $(macos_jobs "$1" "$REPO/.github/workflows/ci.yml"); do
+  for _j in $(macos_jobs "$1" "$4"); do
     grep -q "^- macos-runner:$_j: ." "$3" || { echo "the $_j job runs on macOS with no macos-runner:$_j deviation"; return 1; }
   done
   _pkgdev="$(sed -n 's/^- macos-runner:package: //p' "$3")"
@@ -112,16 +122,17 @@ shape() {
   [ -n "$_declared" ] && [ "$_declared" = "$_watched" ] \
     || { echo "repackage-on-ingredient-bump.yml watches [$(echo $_watched)], not the declared ingredients [$(echo $_declared)]"; return 1; }
 }
-shape "$W" "$R" "$I" > "$T/out" || fail "$(cat "$T/out")"
+shape "$W" "$R" "$I" "$C" > "$T/out" || fail "$(cat "$T/out")"
 
-mutant() {  # mutant <what it breaks> <expected message> <file: W, R or I> <sed script> -- shape must refuse it
-  case "$3" in W) _src="$W" ;; R) _src="$R" ;; I) _src="$I" ;; esac
+mutant() {  # mutant <what it breaks> <expected message> <file: W, R, I or C> <sed script> -- shape must refuse it
+  case "$3" in W) _src="$W" ;; R) _src="$R" ;; I) _src="$I" ;; C) _src="$C" ;; esac
   sed "$4" "$_src" > "$T/mutant"
   if cmp -s "$_src" "$T/mutant"; then fail "mutant '$1' changed nothing"; fi
   case "$3" in
-    W) shape "$T/mutant" "$R" "$I" > "$T/out" && fail "shape passed $1" ;;
-    R) shape "$W" "$T/mutant" "$I" > "$T/out" && fail "shape passed $1" ;;
-    I) shape "$W" "$R" "$T/mutant" > "$T/out" && fail "shape passed $1" ;;
+    W) shape "$T/mutant" "$R" "$I" "$C" > "$T/out" && fail "shape passed $1" ;;
+    R) shape "$W" "$T/mutant" "$I" "$C" > "$T/out" && fail "shape passed $1" ;;
+    I) shape "$W" "$R" "$T/mutant" "$C" > "$T/out" && fail "shape passed $1" ;;
+    C) shape "$W" "$R" "$I" "$T/mutant" > "$T/out" && fail "shape passed $1" ;;
   esac
   grep -qF "$2" "$T/out" || fail "shape, $1: said [$(cat "$T/out")]"
   echo "   refused: $1"
@@ -153,6 +164,9 @@ mutant "an undeclared self-pin" "no self-pin:stevedore deviation" I '/^- self-pi
 mutant "a self-pin the repackage trigger watches" "would release again" R 's|^      - components/zlib/version$|&\
       - components/stevedore/version|'
 mutant "a thin pkg" "does not merge both slices" W 's/MAVERICKS_ALLOW_ARCHS: x86_64 arm64/MAVERICKS_ALLOW_ARCHS: x86_64/'
+mutant "an on-target guest with shipyard's scripts alone" "the on-target job does not give the 10.9 guest" W 's|cp -R "$(dirname "$SHIPYARD_SCRIPTS")" .shipyard$|cp -R "$SHIPYARD_SCRIPTS" .shipyard|'
+mutant "a vm-test guest with shipyard's scripts alone" "the vm-test job does not give the 10.9 guest" C 's|cp -R "$(dirname "$SHIPYARD_SCRIPTS")" .shipyard$|cp -R "$SHIPYARD_SCRIPTS" .shipyard-scripts|'
+mutant "a vm-test guest pointed at the old scripts copy" "the vm-test job does not give the 10.9 guest" C 's|SHIPYARD_SCRIPTS="$PWD/.shipyard/scripts"|SHIPYARD_SCRIPTS="$PWD/.shipyard-scripts"|'
 mutant "an unchecked tarball" "is not checked" W '/python3 "$SHIPYARD_SCRIPTS\/product-tar.py"/d'
 mutant "\${{ }} in a run: block" 'a run: block holds' W 's/^          set -eu$/          echo "${{ github.event.head_commit.message }}"/'
 mutant "an undeclared macOS job" "no macos-runner:on-target deviation" W '/^  on-target:$/,/^  publish:$/s/runs-on: ubuntu-latest/runs-on: macos-26/'

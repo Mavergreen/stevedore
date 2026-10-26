@@ -300,10 +300,10 @@ jobs:
         with: { name: stevedore, path: dist }
       - uses: actions/download-artifact@v8
         with: { name: cross-x86_64, path: sd }
-      - name: The guest gets shipyard's scripts and the test helpers
+      - name: The guest gets shipyard's whole tree and the test helpers
         run: |
           chmod 755 sd/*
-          cp -R "$SHIPYARD_SCRIPTS" .shipyard-scripts
+          cp -R "$(dirname "$SHIPYARD_SCRIPTS")" .shipyard
       - name: Install the pkg on Mac OS X 10.9 and run every suite against the stevedore it installed
         uses: Mavergreen/mavericks-vm@v1
         env:
@@ -330,8 +330,8 @@ jobs:
             [ -f /Library/LaunchAgents/dev.mavergreen.stevedore-updatecheck.plist ] || { echo "the updater's daily check is not installed"; exit 1; }
             /usr/local/bin/mavergreen check
             rc=0
-            STEVEDORE="$SD" STEVEDORE_BUILD="$PWD/sd" SHIPYARD_SCRIPTS="$PWD/.shipyard-scripts" STEVEDORE_REQUIRE_ORACLE=1 \
-              sh .shipyard-scripts/run-repo-tests.sh --strict-host > tests.log 2>&1 || rc=$?
+            STEVEDORE="$SD" STEVEDORE_BUILD="$PWD/sd" SHIPYARD_SCRIPTS="$PWD/.shipyard/scripts" STEVEDORE_REQUIRE_ORACLE=1 \
+              sh .shipyard/scripts/run-repo-tests.sh --strict-host > tests.log 2>&1 || rc=$?
             cat tests.log
             [ "$rc" -eq 0 ] || exit 1
             if grep '^SKIP ' tests.log; then echo "a suite skipped on 10.9, where every one of them must run"; exit 1; fi

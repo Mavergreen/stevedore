@@ -64,7 +64,7 @@ jobs:
           for b in stevedore stevedore-golden stevedore-pin-mismatch stevedore-component-limits stevedore-cpio-limits; do
             cp "$B/$b" sd/
           done
-          cp -R "$SHIPYARD_SCRIPTS" .shipyard-scripts
+          cp -R "$(dirname "$SHIPYARD_SCRIPTS")" .shipyard
       - name: Every suite, the determinism and install tests included, must run on Mac OS X 10.9, not skip
         uses: Mavergreen/mavericks-vm@v1
         with:
@@ -73,8 +73,8 @@ jobs:
             sw_vers
             sudo -n true || { echo "the guest's user cannot sudo without a password, and the install tests need root"; exit 1; }
             rc=0
-            STEVEDORE_BUILD="$PWD/sd" SHIPYARD_SCRIPTS="$PWD/.shipyard-scripts" STEVEDORE_DETERMINISM_OUT="$PWD/determinism" STEVEDORE_REQUIRE_ORACLE=1 \
-              sh .shipyard-scripts/run-repo-tests.sh --strict-host > tests.log 2>&1 || rc=$?
+            STEVEDORE_BUILD="$PWD/sd" SHIPYARD_SCRIPTS="$PWD/.shipyard/scripts" STEVEDORE_DETERMINISM_OUT="$PWD/determinism" STEVEDORE_REQUIRE_ORACLE=1 \
+              sh .shipyard/scripts/run-repo-tests.sh --strict-host > tests.log 2>&1 || rc=$?
             cat tests.log
             [ "$rc" -eq 0 ] || exit 1
             if grep '^SKIP ' tests.log; then echo "a suite skipped on 10.9, where every one of them must run"; exit 1; fi

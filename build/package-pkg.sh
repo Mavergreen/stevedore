@@ -6,7 +6,8 @@
 #          and dist/build-info.txt; VER is the first line of ./VERSION. BINARY and the updater's executable
 #          must each carry exactly the x86_64 and arm64 slices. Prints the pkg's path. The pkg is written by the
 #          stevedore build/fetch-stevedore.sh fetches (STEVEDORE_PACKAGER names another), with SOURCE_DATE_EPOCH, else
-#          the commit's time, as every mtime, and the base component (dev.mavergreen.base) staged here as shipyard's
+#          the commit's time, as every mtime (an exported SOURCE_DATE_EPOCH wins over the commit, and build-info.txt
+#          records the time used as mtime=), and the base component (dev.mavergreen.base) staged here as shipyard's
 #          build-base-component.sh stages it. STEVEDORE_ORACLE=1 also has build/oracle-pkg.sh compare the pkg with
 #          what pkgbuild and productbuild write from the same staged roots.
 set -eu
@@ -98,6 +99,6 @@ pkgutil --expand "$out" "$WORK/expanded" >&2
   || { echo "package-pkg: dev.mavergreen.base is not first in $out" >&2; exit 1; }
 [ -z "${STEVEDORE_ORACLE:-}" ] || sh "$SELF/oracle-pkg.sh" "$WORK" "$out" "$MT" "$VER" >&2
 sh "$SHIPYARD_SCRIPTS/build-info.sh" dist/build-info.txt "pkg=stevedore-$VER.pkg" \
-  identifier=dev.mavergreen.stevedore arch=x86_64,arm64 \
+  identifier=dev.mavergreen.stevedore arch=x86_64,arm64 "mtime=$MT" \
   "stevedore-packager=$(sed -n 1p components/stevedore/version)" "zlib=$(sed -n 1p components/zlib/version)" "clang22=$(sed -n 1p components/clang22/version)"
 printf '%s\n' "$out"

@@ -8,7 +8,10 @@
 #          package-pkg.sh then writes a pkg whose Distribution holds the install floor, the base first and
 #          the stevedore component, whose payload holds the binary and the updater, which matches what pkgbuild
 #          and productbuild write from the same staged roots (build/oracle-pkg.sh), and which is the same pkg,
-#          byte for byte, when packaged again two seconds later.
+#          byte for byte, when packaged again two seconds later, and, where git runs, when packaged with no
+#          SOURCE_DATE_EPOCH from a commit made at that time. It packages with a copy of shipyard's scripts and
+#          updater templates, and with a stand-in MavericksShipyardConfigVersion.cmake when SHIPYARD_SCRIPTS has none
+#          beside it (the action's own checkout on a Linux runner, copied into the 10.9 guest), so it needs no git.
 set -eu
 STEVEDORE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$STEVEDORE_ROOT/build/lib.sh"
@@ -24,8 +27,6 @@ P="$STEVEDORE_ROOT/build/package-pkg.sh"
 runs() { "$@" >/dev/null 2>&1; }
 runs pkgbuild --help || runs sh -c 'pkgbuild 2>&1 | grep -qi usage' || { echo "package-pkg-test: SKIP (pkgbuild does not run)"; exit 77; }
 [ -f "$SHIPYARD_SCRIPTS/../updater/updatecheck.plist.in" ] || { echo "package-pkg-test: SKIP (no shipyard updater templates beside $SHIPYARD_SCRIPTS)"; exit 77; }
-[ -f "$SHIPYARD_SCRIPTS/../MavericksShipyardConfigVersion.cmake" ] || runs sh "$SHIPYARD_SCRIPTS/shipyard-version.sh" \
-  || { echo "package-pkg-test: SKIP (shipyard's version needs git, which does not run here)"; exit 77; }
 [ -x "$SD" ] || fail "no stevedore binary at $SD -- build it with sh build/build.sh, or set STEVEDORE"
 
 if sed 's/^[[:space:]]*#.*//' "$P" | grep -Eq 'pkgbuild|productbuild|build_component_pkg|set_install_floor'; then
@@ -42,6 +43,16 @@ case "$V" in ''|*[!0-9.]*) fail "components/stevedore/version holds '$V', not a 
 T="$(mktemp -d "${TMPDIR:-/tmp}/package-pkg.XXXXXX")"
 trap 'chmod -R u+rwx "$T" 2>/dev/null; rm -rf "$T"' EXIT
 FAKEV=20990101.7
+SY="$T/shipyard"
+mkdir "$SY"
+cp -R "$SHIPYARD_SCRIPTS" "$SY/scripts"
+cp -R "$SHIPYARD_SCRIPTS/../updater" "$SY/updater"
+if [ -f "$SHIPYARD_SCRIPTS/../MavericksShipyardConfigVersion.cmake" ]; then
+  cp "$SHIPYARD_SCRIPTS/../MavericksShipyardConfigVersion.cmake" "$SY/"
+else
+  printf 'set(PACKAGE_VERSION "1.0.0")\n' > "$SY/MavericksShipyardConfigVersion.cmake"
+fi
+SHIPYARD_SCRIPTS="$SY/scripts"
 
 mkdir -p "$T/rel/Mavergreen/stevedore/releases/download/$FAKEV" "$T/pl/usr/local/mavergreen/stevedore/bin" "$T/pkgs" "$T/scripts"
 printf '#!/bin/sh\necho "stevedore %s"\n' "$FAKEV" > "$T/pl/usr/local/mavergreen/stevedore/bin/stevedore"
@@ -98,11 +109,12 @@ printf '20990102.1\n' > "$T/work/VERSION"
 mkdir -p "$T/work/components" "$T/work/tests/fixtures"
 cp -R "$STEVEDORE_ROOT/tests/fixtures/oracle" "$T/work/tests/fixtures/oracle"
 cp -R "$STEVEDORE_ROOT/components/zlib" "$STEVEDORE_ROOT/components/clang22" "$T/work/components/"
-pkg() {  # pkg DIR -- package-pkg.sh of the copy in DIR with the synthetic inputs, packaged by $SD
-  ( cd "$1" && LIPO="$T/lipo/lipo" STEVEDORE_PACKAGER="$SD" STEVEDORE_ORACLE=1 SOURCE_DATE_EPOCH=1672574400 MAVERICKS_BUILD_ROOT="$T/build-root" \
+pkg() {  # pkg DIR [VAR=VALUE...] -- package-pkg.sh of the copy in DIR with the synthetic inputs, packaged by $SD
+  ( cd "$1" && shift && unset SOURCE_DATE_EPOCH \
+      && env LIPO="$T/lipo/lipo" STEVEDORE_PACKAGER="$SD" STEVEDORE_ORACLE=1 MAVERICKS_BUILD_ROOT="$T/build-root" "$@" \
       sh build/package-pkg.sh "$T/stevedore" "$T/app/stevedore-updater.app" )
 }
-pkg "$T/work" > "$T/pkg.out" 2> "$T/pkg.err" || fail "package-pkg.sh failed: $(tail -5 "$T/pkg.err" | tr '\n' '|')"
+pkg "$T/work" SOURCE_DATE_EPOCH=1672574400 > "$T/pkg.out" 2> "$T/pkg.err" || fail "package-pkg.sh failed: $(tail -5 "$T/pkg.err" | tr '\n' '|')"
 out="$T/work/dist/stevedore-20990102.1.pkg"
 [ "$(cat "$T/pkg.out")" = dist/stevedore-20990102.1.pkg ] && [ -f "$out" ] || fail "package-pkg.sh printed '$(cat "$T/pkg.out")' and wrote no $out"
 pkgutil --check-signature "$out" >/dev/null 2>&1 || :
@@ -121,14 +133,28 @@ pkgutil --expand-full "$out" "$T/xf" >/dev/null 2>&1 || fail "pkgutil cannot exp
 [ -f "$T/xf/stevedore.pkg/Scripts/postinstall" ] || fail "the component carries no postinstall"
 cp "$out" "$T/first.pkg"
 sleep 2
-pkg "$T/work" >/dev/null 2>&1 || fail "the second package-pkg.sh failed"
+pkg "$T/work" SOURCE_DATE_EPOCH=1672574400 >/dev/null 2>&1 || fail "the second package-pkg.sh failed"
 cmp -s "$T/first.pkg" "$out" || fail "the same commit packaged two seconds apart gave different pkgs"
 grep -q 'stevedore-packager=' "$T/work/dist/build-info.txt" || fail "build-info.txt does not record the packager"
+grep -qx 'mtime=1672574400' "$T/work/dist/build-info.txt" || fail "build-info.txt does not record the pkg time"
+if runs git --version; then
+  mkdir "$T/git"
+  cp -R "$T/work/." "$T/git/"
+  rm -rf "$T/git/dist"
+  ( cd "$T/git" && git init -q && git add -A \
+      && GIT_AUTHOR_DATE='1672574400 +0000' GIT_COMMITTER_DATE='1672574400 +0000' \
+         git -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false commit -qm t ) >/dev/null 2>&1 \
+    || fail "cannot commit the git fallback's copy"
+  pkg "$T/git" STEVEDORE_ORACLE= > /dev/null 2> "$T/git.err" || fail "package-pkg.sh without SOURCE_DATE_EPOCH failed: $(tail -3 "$T/git.err" | tr '\n' '|')"
+  cmp -s "$T/first.pkg" "$T/git/dist/stevedore-20990102.1.pkg" || fail "package-pkg.sh without SOURCE_DATE_EPOCH did not take the commit's time"
+else
+  echo "package-pkg-test: git does not run here, so the commit-time fallback is not checked" >&2
+fi
 mkdir "$T/drift"
 cp -R "$T/work/." "$T/drift/"
 rm -rf "$T/drift/dist"
 sed '/manpaths"$/d' "$T/work/build/package-pkg.sh" > "$T/drift/build/package-pkg.sh"
 cmp -s "$T/work/build/package-pkg.sh" "$T/drift/build/package-pkg.sh" && fail "the drift mutant changed nothing"
-if pkg "$T/drift" > "$T/drift.out" 2> "$T/drift.err"; then fail "package-pkg.sh passed the oracle with a base component that lacks a file shipyard's has"; fi
+if pkg "$T/drift" SOURCE_DATE_EPOCH=1672574400 > "$T/drift.out" 2> "$T/drift.err"; then fail "package-pkg.sh passed the oracle with a base component that lacks a file shipyard's has"; fi
 grep -q 'oracle-pkg: .* is not what pkgbuild and productbuild write' "$T/drift.err" || fail "the drifted base was refused for another reason: $(tail -3 "$T/drift.err" | tr '\n' '|')"
 echo "package-pkg-test: ok"
