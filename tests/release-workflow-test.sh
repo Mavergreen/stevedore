@@ -9,7 +9,9 @@
 #   job anywhere runs on a macOS runner without a macos-runner:<job> deviation; and an ingredient in INGREDIENTS.md's
 #   Declared state is exactly what repackage-on-ingredient-bump.yml watches. Each check is shown to refuse a
 #   mutated copy. The package job also builds the Sparkle updater into the pkg and signs it, and a key scan precedes
-#   publish.
+#   publish. The package job runs the pkgbuild and productbuild oracles with the pinned stevedore before it packages
+#   with it, INGREDIENTS.md no longer gives the bootstrap as a reason for the macOS runner, and the stevedore
+#   self-pin is declared as a deviation and is in no ingredient list, trigger, bot or Renovate manager.
 set -eu
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -68,6 +70,12 @@ shape() {
     && grep -qF 'llvm-lipo" -create' "$T/package" \
     && grep -qF 'MAVERICKS_ALLOW_ARCHS: x86_64 arm64' "$T/package" \
     || { echo "the package job does not merge both slices, guard them and package them"; return 1; }
+  grep -qF 'STEVEDORE="$(sh build/fetch-stevedore.sh)/bin/stevedore"' "$T/package" \
+    && grep -qF 'sh tests/component-oracle-test.sh' "$T/package" \
+    && grep -qF 'sh tests/product-oracle-test.sh' "$T/package" \
+    && grep -qF 'STEVEDORE_REQUIRE_ORACLE: 1' "$T/package" \
+    && [ "$(awk '/product-oracle-test.sh/ { o = NR } /build\/package-pkg.sh/ { p = NR } END { print (o && p > o) }' "$T/package")" = 1 ] \
+    || { echo "the package job does not run the oracles with the pinned stevedore before it packages with it"; return 1; }
   grep -qF 'app="$(sh build/build-updater.sh)"' "$T/package" \
     && grep -qF 'sh build/package-pkg.sh "$RUNNER_TEMP/stevedore" "$STEVEDORE_UPDATER"' "$T/package" \
     && grep -qF 'sh "$SHIPYARD_SCRIPTS/sign_and_appcast.sh" --product stevedore --feed-dir dist' "$T/package" \
@@ -85,6 +93,13 @@ shape() {
   for _j in $(macos_jobs "$1" "$REPO/.github/workflows/ci.yml"); do
     grep -q "^- macos-runner:$_j: ." "$3" || { echo "the $_j job runs on macOS with no macos-runner:$_j deviation"; return 1; }
   done
+  _pkgdev="$(sed -n 's/^- macos-runner:package: //p' "$3")"
+  case "$_pkgdev" in *ootstrap*|*"before its first release"*|*"pkgbuild and productbuild through"*) echo "macos-runner:package still gives the bootstrap as a reason"; return 1 ;; esac
+  case "$_pkgdev" in *"for two reasons"*arm64*"Sparkle updater"*) ;; *) echo "macos-runner:package does not keep the arm64 and updater reasons"; return 1 ;; esac
+  grep -q '^- self-pin:stevedore: .*[Rr]evisit if' "$3" || { echo "no self-pin:stevedore deviation with its revisit trigger"; return 1; }
+  ! sed -n '/^## Declared state/,/^## /p' "$3" | grep -q 'components/stevedore' \
+    && ! grep -q 'components/stevedore' "$2" "$REPO/.github/renovate.json" "$REPO/.github/workflows/pins-bot.yml" \
+    || { echo "the stevedore self-pin is declared, watched, bot-managed or Renovate-tracked, so a bump would release again"; return 1; }
   _declared="$(sed -n '/^## Declared state/,/^## /p' "$3" | sed -n 's/^- [a-z0-9-]*: \(components\/.*\)$/\1/p' | LC_ALL=C sort)"
   _watched="$(sed -n 's/^      - \(components\/.*\)$/\1/p' "$2" | LC_ALL=C sort)"
   [ -n "$_declared" ] && [ "$_declared" = "$_watched" ] \
@@ -122,6 +137,12 @@ mutant "a publish off main" "yes on main" W "/^  publish:\$/,\$s/ \&\& github.re
 mutant "a hand-rolled publish" "is not shipyard's" W 's|publish-release.yml@v1|publish-release.yml@main|'
 mutant "an on-target that installs nothing" "does not install this run's pkg" W '/sudo installer -pkg "dist\/stevedore-$V.pkg"/d'
 mutant "an on-target that tests the build, not the pkg" "does not install this run's pkg" W 's/STEVEDORE="$SD" STEVEDORE_BUILD/STEVEDORE_BUILD/'
+mutant "a packager that is not checked against the oracles" "does not run the oracles" W '/sh tests\/product-oracle-test.sh/d'
+mutant "the bootstrap reason kept" "still gives the bootstrap" I 's/for two reasons\. The arm64/for two reasons. The packager cannot package itself before its first release. The arm64/'
+mutant "the updater reason dropped" "does not keep the arm64 and updater reasons" I 's/Sparkle updater is built there/Sparkle thing is built there/'
+mutant "an undeclared self-pin" "no self-pin:stevedore deviation" I '/^- self-pin:stevedore:/d'
+mutant "a self-pin the repackage trigger watches" "would release again" R 's|^      - components/zlib/version$|&\
+      - components/stevedore/version|'
 mutant "a thin pkg" "does not merge both slices" W 's/MAVERICKS_ALLOW_ARCHS: x86_64 arm64/MAVERICKS_ALLOW_ARCHS: x86_64/'
 mutant "an unchecked tarball" "is not checked" W '/python3 "$SHIPYARD_SCRIPTS\/product-tar.py"/d'
 mutant "\${{ }} in a run: block" 'a run: block holds' W 's/^          set -eu$/          echo "${{ github.event.head_commit.message }}"/'
