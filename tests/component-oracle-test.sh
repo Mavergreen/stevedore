@@ -18,6 +18,7 @@ SHIPYARD_SCRIPTS="${SHIPYARD_SCRIPTS:-/usr/local/mavergreen/shipyard/share/cmake
 . "$FX/trees/bundles.sh"
 . "$FX/trees/scripts.sh"
 . "$FX/oracle/normalize.sh"
+. "$FX/oracle/compare.sh"
 fails=0
 fail() { echo "FAIL: $*" >&2; fails=$((fails + 1)); }
 
@@ -80,37 +81,6 @@ find "$T/fat" -exec env TZ=UTC touch -h -t 202301011200 {} +
 fat_x86_64_arm64 "$T/fat/bin/synthetic" || fail "the synthetic Mach-O is not universal x86_64 and arm64"
 [ -n "$universal" ] || echo "note: no installed universal family binary; the fat fixture holds only the synthetic one"
 
-normalize() {
-  awk '
-    function norm(line,   pre, rest, n, a, i, j, t, out) {
-      if (match(line, /^ *<[A-Za-z-]+/) == 0) return line
-      pre = substr(line, 1, RLENGTH); rest = substr(line, RLENGTH + 1); n = 0
-      while (match(rest, /^ [A-Za-z][A-Za-z-]*="[^"]*"/)) {
-        t = substr(rest, 2, RLENGTH - 1); rest = substr(rest, RLENGTH + 1)
-        if (t ~ /^generator-version=/ || t == "timeout=\"600\"") continue
-        a[++n] = t
-      }
-      for (i = 2; i <= n; i++) { t = a[i]; for (j = i - 1; j >= 1 && a[j] > t; j--) a[j + 1] = a[j]; a[j + 1] = t }
-      out = pre
-      for (i = 1; i <= n; i++) out = out " " a[i]
-      return out rest
-    }
-    function flush(   i, j, t) {
-      for (i = 2; i <= nb; i++) { t = b[i]; for (j = i - 1; j >= 1 && b[j] > t; j--) b[j + 1] = b[j]; b[j + 1] = t }
-      for (i = 1; i <= nb; i++) print b[i]
-      nb = 0; ind = ""
-    }
-    {
-      l = norm($0)
-      if (match(l, /^ *<bundle /)) {
-        if (nb > 0 && substr(l, 1, RLENGTH) != ind) flush()
-        ind = substr(l, 1, RLENGTH); b[++nb] = l; next
-      }
-      flush(); print l
-    }
-    END { flush() }' "$1"
-}
-
 expanded() {
   name="$1"; shift
   id="dev.mavergreen.stevedore-test.$$.$name"
@@ -123,28 +93,13 @@ expanded() {
   for k in sd pb; do
     pkgutil --expand "$T/$name.$k.pkg" "$T/$name.$k" || { fail "pkgutil --expand rejects the $k $name pkg"; return 1; }
   done
-  (cd "$T/$name.pb" && find . | LC_ALL=C sort) > "$T/pb.list"
-  (cd "$T/$name.sd" && find . | LC_ALL=C sort) > "$T/sd.list"
-  cmp -s "$T/pb.list" "$T/sd.list" || fail "$name: the expanded pkgs hold other names: $(diff "$T/pb.list" "$T/sd.list" | tr '\n' '|')"
-  for o in "-p MUGsTfc" "" "-s"; do
-    TZ=UTC lsbom $o "$T/$name.pb/Bom" > "$T/pb.out"
-    TZ=UTC lsbom $o "$T/$name.sd/Bom" > "$T/sd.out"
-    cmp -s "$T/pb.out" "$T/sd.out" || fail "$name: lsbom $o differs: $(diff "$T/pb.out" "$T/sd.out" | head -6 | tr '\n' '|')"
-  done
-  for k in sd pb; do gzip -dc < "$T/$name.$k/Payload" | TZ=UTC cpio -itv 2>/dev/null | LC_ALL=C sort > "$T/$k.out"; done
-  cmp -s "$T/pb.out" "$T/sd.out" || fail "$name: the payload listings differ: $(diff "$T/pb.out" "$T/sd.out" | head -6 | tr '\n' '|')"
+  same_component "$name" "$T/$name.pb" "$T/$name.sd"
   if [ -d "$T/$name.pb/Scripts" ]; then
-    for k in sd pb; do (cd "$T/$name.$k/Scripts" && find . -exec stat -f '%Sp %z %m %N%SY' {} + | LC_ALL=C sort && find . -type f -exec cksum {} + | LC_ALL=C sort) > "$T/$k.out"; done
-    cmp -s "$T/pb.out" "$T/sd.out" || fail "$name: the expanded Scripts differ: $(diff "$T/pb.out" "$T/sd.out" | head -6 | tr '\n' '|')"
     for s in preinstall postinstall; do
       [ ! -f "$T/$name.sd/Scripts/$s" ] || grep -q "<$s file=\"./$s\" timeout=\"600\"/>" "$T/$name.sd/PackageInfo" \
         || fail "$name: the $s entry has no timeout=\"600\""
     done
   fi
-  oracle_reconcile "$T/$name.pb/PackageInfo" "$T/$name.sd/PackageInfo" "$T/pb.pi" "$T/sd.pi"
-  normalize "$T/pb.pi" > "$T/pb.out"
-  normalize "$T/sd.pi" > "$T/sd.out"
-  cmp -s "$T/pb.out" "$T/sd.out" || fail "$name: the PackageInfos differ beyond generator-version, timeout, order and oracle_reconcile: $(diff "$T/pb.out" "$T/sd.out" | head -12 | tr '\n' '|')"
   grep -q "generator-version=\"stevedore-$("$SD" --version | sed 's/^stevedore //')\"" "$T/$name.sd/PackageInfo" \
     || fail "$name: generator-version is not stevedore-<version>"
   sh "$SHIPYARD_SCRIPTS/assert_pkg_installs_in_place.sh" "$T/$name.sd.pkg" >/dev/null 2>"$T/inplace.err" \

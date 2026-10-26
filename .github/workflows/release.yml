@@ -141,9 +141,10 @@ jobs:
       - name: The build must not have written into the source tree
         run: sh "$SHIPYARD_SCRIPTS/assert-tree-clean.sh"
 
-  # spec: INGREDIENTS.md "Conformance deviations", macos-runner:package -- the arm64 slice and the Sparkle
-  #       updater are built here, until shipyard's toolchain cross-builds arm64 on Linux and updaters
-  #       cross-build with clang22; the pkg itself is written by the pinned stevedore
+  # spec: INGREDIENTS.md "Conformance deviations", macos-runner:package -- this job needs macOS for the arm64
+  #       slice, the Sparkle updater, PlistBuddy staging, pkgutil, the pkgbuild and productbuild comparison of
+  #       the pkg, and the Installer run of it; the pkg itself, base component included, is written by the
+  #       pinned stevedore
   # spec: INGREDIENTS.md "Conformance deviations", macos-runner:package -- a same-repo PR's head already ran
   #       here on its branch push, so its pull_request run skips this job and on-target; a fork's PR and a
   #       Renovate PR, whose branch push release.yml does not build, run them
@@ -193,15 +194,17 @@ jobs:
             || { echo "::error::the updater polls $feed, not stevedore's feed"; exit 1; }
           echo "STEVEDORE_UPDATER=$app" >> "$GITHUB_ENV"
       - name: The pinned stevedore passes the pkgbuild and productbuild oracles
-        env:
-          STEVEDORE_REQUIRE_ORACLE: 1
         run: |
           set -eu
           STEVEDORE="$(sh build/fetch-stevedore.sh)/bin/stevedore"
           export STEVEDORE
           sh tests/component-oracle-test.sh
           sh tests/product-oracle-test.sh
-      - name: Package the universal pkg
+      - name: Every mtime in the pkg is HEAD's commit time
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - name: Package the universal pkg, and compare it with what pkgbuild and productbuild write from the same inputs
+        env:
+          STEVEDORE_ORACLE: 1
         run: sh build/package-pkg.sh "$RUNNER_TEMP/stevedore" "$STEVEDORE_UPDATER"
       - uses: actions/download-artifact@v8
         with: { name: dist-linux, path: dist }

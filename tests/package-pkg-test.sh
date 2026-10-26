@@ -1,13 +1,14 @@
 #!/bin/sh
-# platform: macOS-only -- build/package-pkg.sh stages with PlistBuddy, builds the base component with pkgbuild, and fetch-stevedore.sh unpacks with pkgutil
+# platform: macOS-only -- build/package-pkg.sh stages with PlistBuddy, build/oracle-pkg.sh runs pkgbuild and productbuild, and fetch-stevedore.sh unpacks with pkgutil
 #   usage: sh tests/package-pkg-test.sh
 #          The release is packaged by the pinned stevedore, not by pkgbuild or productbuild: package-pkg.sh
 #          calls no tool but stevedore's component and product for the pkg; components/stevedore pins a
 #          release and the digest of its pkg; fetch-stevedore.sh unpacks the binary of a release it can verify
 #          against that digest, and refuses any other. Against a synthetic release served from a file:// tree,
 #          package-pkg.sh then writes a pkg whose Distribution holds the install floor, the base first and
-#          the stevedore component, whose payload holds the binary and the updater, and which is the same pkg
-#          for the same commit.
+#          the stevedore component, whose payload holds the binary and the updater, which matches what pkgbuild
+#          and productbuild write from the same staged roots (build/oracle-pkg.sh), and which is the same pkg,
+#          byte for byte, when packaged again two seconds later.
 set -eu
 STEVEDORE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$STEVEDORE_ROOT/build/lib.sh"
@@ -20,6 +21,11 @@ P="$STEVEDORE_ROOT/build/package-pkg.sh"
 
 [ "$(uname -s)" = Darwin ] && command -v pkgbuild >/dev/null 2>&1 || { echo "package-pkg-test: SKIP (no pkgbuild)"; exit 77; }
 [ -f "$SHIPYARD_SCRIPTS/build-base-component.sh" ] || { echo "package-pkg-test: SKIP (no build-base-component.sh in $SHIPYARD_SCRIPTS)"; exit 77; }
+runs() { "$@" >/dev/null 2>&1; }
+runs pkgbuild --help || runs sh -c 'pkgbuild 2>&1 | grep -qi usage' || { echo "package-pkg-test: SKIP (pkgbuild does not run)"; exit 77; }
+[ -f "$SHIPYARD_SCRIPTS/../updater/updatecheck.plist.in" ] || { echo "package-pkg-test: SKIP (no shipyard updater templates beside $SHIPYARD_SCRIPTS)"; exit 77; }
+[ -f "$SHIPYARD_SCRIPTS/../MavericksShipyardConfigVersion.cmake" ] || runs sh "$SHIPYARD_SCRIPTS/shipyard-version.sh" \
+  || { echo "package-pkg-test: SKIP (shipyard's version needs git, which does not run here)"; exit 77; }
 [ -x "$SD" ] || fail "no stevedore binary at $SD -- build it with sh build/build.sh, or set STEVEDORE"
 
 if sed 's/^[[:space:]]*#.*//' "$P" | grep -Eq 'pkgbuild|productbuild|build_component_pkg|set_install_floor'; then
@@ -89,14 +95,11 @@ chmod 755 "$T/app/stevedore-updater.app/Contents/MacOS/stevedore-updater"
 mkdir "$T/work"
 cp -R "$STEVEDORE_ROOT/build" "$T/work/build"
 printf '20990102.1\n' > "$T/work/VERSION"
-mkdir -p "$T/work/components"
+mkdir -p "$T/work/components" "$T/work/tests/fixtures"
+cp -R "$STEVEDORE_ROOT/tests/fixtures/oracle" "$T/work/tests/fixtures/oracle"
 cp -R "$STEVEDORE_ROOT/components/zlib" "$STEVEDORE_ROOT/components/clang22" "$T/work/components/"
-git -C "$T/work" init -q
-git -C "$T/work" add .
-GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com \
-  GIT_COMMITTER_DATE="2023-01-01T12:00:00Z" GIT_AUTHOR_DATE="2023-01-01T12:00:00Z" git -C "$T/work" commit -q -m c
 pkg() {  # pkg DIR -- package-pkg.sh of the copy in DIR with the synthetic inputs, packaged by $SD
-  ( cd "$1" && LIPO="$T/lipo/lipo" STEVEDORE_PACKAGER="$SD" MAVERICKS_BUILD_ROOT="$T/build-root" \
+  ( cd "$1" && LIPO="$T/lipo/lipo" STEVEDORE_PACKAGER="$SD" STEVEDORE_ORACLE=1 SOURCE_DATE_EPOCH=1672574400 MAVERICKS_BUILD_ROOT="$T/build-root" \
       sh build/package-pkg.sh "$T/stevedore" "$T/app/stevedore-updater.app" )
 }
 pkg "$T/work" > "$T/pkg.out" 2> "$T/pkg.err" || fail "package-pkg.sh failed: $(tail -5 "$T/pkg.err" | tr '\n' '|')"
@@ -117,8 +120,15 @@ pkgutil --expand-full "$out" "$T/xf" >/dev/null 2>&1 || fail "pkgutil cannot exp
 [ -d "$T/xf/stevedore.pkg/Payload/Library/Application Support/Mavergreen/stevedore-updater.app" ] || fail "the payload does not hold the updater"
 [ -f "$T/xf/stevedore.pkg/Scripts/postinstall" ] || fail "the component carries no postinstall"
 cp "$out" "$T/first.pkg"
+sleep 2
 pkg "$T/work" >/dev/null 2>&1 || fail "the second package-pkg.sh failed"
-pkgutil --expand "$out" "$T/y"
-cmp -s "$T/x/stevedore.pkg/Bom" "$T/y/stevedore.pkg/Bom" && cmp -s "$T/x/stevedore.pkg/Payload" "$T/y/stevedore.pkg/Payload" \
-  && cmp -s "$T/x/stevedore.pkg/PackageInfo" "$T/y/stevedore.pkg/PackageInfo" || fail "the same commit packaged twice gave different components"
+cmp -s "$T/first.pkg" "$out" || fail "the same commit packaged two seconds apart gave different pkgs"
+grep -q 'stevedore-packager=' "$T/work/dist/build-info.txt" || fail "build-info.txt does not record the packager"
+mkdir "$T/drift"
+cp -R "$T/work/." "$T/drift/"
+rm -rf "$T/drift/dist"
+sed '/manpaths"$/d' "$T/work/build/package-pkg.sh" > "$T/drift/build/package-pkg.sh"
+cmp -s "$T/work/build/package-pkg.sh" "$T/drift/build/package-pkg.sh" && fail "the drift mutant changed nothing"
+if pkg "$T/drift" > "$T/drift.out" 2> "$T/drift.err"; then fail "package-pkg.sh passed the oracle with a base component that lacks a file shipyard's has"; fi
+grep -q 'oracle-pkg: .* is not what pkgbuild and productbuild write' "$T/drift.err" || fail "the drifted base was refused for another reason: $(tail -3 "$T/drift.err" | tr '\n' '|')"
 echo "package-pkg-test: ok"

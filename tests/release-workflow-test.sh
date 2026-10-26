@@ -12,6 +12,7 @@
 #   publish. The package job runs the pkgbuild and productbuild oracles with the pinned stevedore before it packages
 #   with it, INGREDIENTS.md no longer gives the bootstrap as a reason for the macOS runner, and the stevedore
 #   self-pin is declared as a deviation and is in no ingredient list, trigger, bot or Renovate manager.
+#   The package job compares its pkg with pkgbuild and productbuild (build/oracle-pkg.sh), and the macOS-runner deviation names every macOS dependency.
 set -eu
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -73,7 +74,10 @@ shape() {
   grep -qF 'STEVEDORE="$(sh build/fetch-stevedore.sh)/bin/stevedore"' "$T/package" \
     && grep -qF 'sh tests/component-oracle-test.sh' "$T/package" \
     && grep -qF 'sh tests/product-oracle-test.sh' "$T/package" \
-    && grep -qF 'STEVEDORE_REQUIRE_ORACLE: 1' "$T/package" \
+    && grep -qF 'STEVEDORE_ORACLE: 1' "$T/package" \
+    && grep -qF 'echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"' "$T/package" \
+    && [ -f "$REPO/build/oracle-pkg.sh" ] \
+    && grep -qF 'sh "$SELF/oracle-pkg.sh"' "$REPO/build/package-pkg.sh" \
     && [ "$(awk '/product-oracle-test.sh/ { o = NR } /build\/package-pkg.sh/ { p = NR } END { print (o && p > o) }' "$T/package")" = 1 ] \
     || { echo "the package job does not run the oracles with the pinned stevedore before it packages with it"; return 1; }
   grep -qF 'app="$(sh build/build-updater.sh)"' "$T/package" \
@@ -95,7 +99,10 @@ shape() {
   done
   _pkgdev="$(sed -n 's/^- macos-runner:package: //p' "$3")"
   case "$_pkgdev" in *ootstrap*|*"before its first release"*|*"pkgbuild and productbuild through"*) echo "macos-runner:package still gives the bootstrap as a reason"; return 1 ;; esac
-  case "$_pkgdev" in *"for two reasons"*arm64*"Sparkle updater"*) ;; *) echo "macos-runner:package does not keep the arm64 and updater reasons"; return 1 ;; esac
+  for _r in "arm64 slice" "Sparkle updater" PlistBuddy "pkgutil --expand-full" "build/oracle-pkg.sh" Installer; do
+    case "$_pkgdev" in *"$_r"*) ;; *) echo "macos-runner:package does not name its macOS dependency [$_r]"; return 1 ;; esac
+  done
+  case "$_pkgdev" in *exit:*exit:*exit:*exit:*exit:*exit:*) ;; *) echo "macos-runner:package does not give each reason an exit"; return 1 ;; esac
   grep -q '^- self-pin:stevedore: .*[Rr]evisit if' "$3" || { echo "no self-pin:stevedore deviation with its revisit trigger"; return 1; }
   ! sed -n '/^## Declared state/,/^## /p' "$3" | grep -q 'components/stevedore' \
     && ! grep -q 'components/stevedore' "$2" "$REPO/.github/renovate.json" "$REPO/.github/workflows/pins-bot.yml" \
@@ -138,8 +145,10 @@ mutant "a hand-rolled publish" "is not shipyard's" W 's|publish-release.yml@v1|p
 mutant "an on-target that installs nothing" "does not install this run's pkg" W '/sudo installer -pkg "dist\/stevedore-$V.pkg"/d'
 mutant "an on-target that tests the build, not the pkg" "does not install this run's pkg" W 's/STEVEDORE="$SD" STEVEDORE_BUILD/STEVEDORE_BUILD/'
 mutant "a packager that is not checked against the oracles" "does not run the oracles" W '/sh tests\/product-oracle-test.sh/d'
-mutant "the bootstrap reason kept" "still gives the bootstrap" I 's/for two reasons\. The arm64/for two reasons. The packager cannot package itself before its first release. The arm64/'
-mutant "the updater reason dropped" "does not keep the arm64 and updater reasons" I 's/Sparkle updater is built there/Sparkle thing is built there/'
+mutant "the bootstrap reason kept" "still gives the bootstrap" I 's/for six reasons\. (1)/for six reasons. The packager cannot package itself before its first release. (1)/'
+mutant "the updater reason dropped" "does not name its macOS dependency" I 's/Sparkle updater is built there/Sparkle thing is built there/'
+mutant "the oracle comparison dropped from the deviation" "does not name its macOS dependency" I 's/build\/oracle-pkg.sh builds/the oracle builds/'
+mutant "a package job that skips the release-pkg comparison" "does not run the oracles" W '/STEVEDORE_ORACLE: 1/d'
 mutant "an undeclared self-pin" "no self-pin:stevedore deviation" I '/^- self-pin:stevedore:/d'
 mutant "a self-pin the repackage trigger watches" "would release again" R 's|^      - components/zlib/version$|&\
       - components/stevedore/version|'
