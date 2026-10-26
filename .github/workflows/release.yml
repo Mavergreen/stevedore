@@ -198,8 +198,12 @@ jobs:
           set -eu
           STEVEDORE="$(sh build/fetch-stevedore.sh)/bin/stevedore"
           export STEVEDORE
-          sh tests/component-oracle-test.sh
-          sh tests/product-oracle-test.sh
+          pinned="$RUNNER_TEMP/stevedore-pinned-source"
+          rm -rf "$pinned"
+          mkdir "$pinned"
+          git archive "$(tr -d ' \t\n' < components/stevedore/version)" | tar -x -C "$pinned"
+          sh "$pinned/tests/component-oracle-test.sh"
+          sh "$pinned/tests/product-oracle-test.sh"
       - name: Every mtime in the pkg is HEAD's commit time
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
       - name: Package the universal pkg, and compare it with what pkgbuild and productbuild write from the same inputs

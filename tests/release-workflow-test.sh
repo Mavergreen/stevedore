@@ -12,6 +12,8 @@
 #   publish. The package job runs the pkgbuild and productbuild oracles with the pinned stevedore before it packages
 #   with it, INGREDIENTS.md no longer gives the bootstrap as a reason for the macOS runner, and the stevedore
 #   self-pin is declared as a deviation and is in no ingredient list, trigger, bot or Renovate manager.
+#   Those oracle tests are the pinned release's own (git archive of the tag components/stevedore/version names), so a
+#   feature HEAD's tests cover cannot fail against the older pinned binary.
 #   The package job compares its pkg with pkgbuild and productbuild (build/oracle-pkg.sh), and the macOS-runner deviation names every macOS dependency.
 #   ci.yml's vm-test and release.yml's on-target give the 10.9 guest shipyard's whole tree, not its scripts/ alone.
 set -eu
@@ -82,12 +84,13 @@ shape() {
     && grep -qF 'MAVERICKS_ALLOW_ARCHS: x86_64 arm64' "$T/package" \
     || { echo "the package job does not merge both slices, guard them and package them"; return 1; }
   grep -qF 'STEVEDORE="$(sh build/fetch-stevedore.sh)/bin/stevedore"' "$T/package" \
-    && grep -qF 'sh tests/component-oracle-test.sh' "$T/package" \
-    && grep -qF 'sh tests/product-oracle-test.sh' "$T/package" \
+    && grep -qF 'sh "$pinned/tests/component-oracle-test.sh"' "$T/package" \
+    && grep -qF 'sh "$pinned/tests/product-oracle-test.sh"' "$T/package" \
     && grep -qF 'STEVEDORE_ORACLE: 1' "$T/package" \
     && grep -qF 'echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"' "$T/package" \
     && [ -f "$REPO/build/oracle-pkg.sh" ] \
     && grep -qF 'sh "$SELF/oracle-pkg.sh"' "$REPO/build/package-pkg.sh" \
+    && grep -qF 'git archive "$(tr -d '"' \\t\\n'"' < components/stevedore/version)" | tar -x -C "$pinned"' "$T/package" \
     && [ "$(awk '/product-oracle-test.sh/ { o = NR } /build\/package-pkg.sh/ { p = NR } END { print (o && p > o) }' "$T/package")" = 1 ] \
     || { echo "the package job does not run the oracles with the pinned stevedore before it packages with it"; return 1; }
   grep -qF 'app="$(sh build/build-updater.sh)"' "$T/package" \
@@ -155,7 +158,9 @@ mutant "a publish off main" "yes on main" W "/^  publish:\$/,\$s/ \&\& github.re
 mutant "a hand-rolled publish" "is not shipyard's" W 's|publish-release.yml@v1|publish-release.yml@main|'
 mutant "an on-target that installs nothing" "does not install this run's pkg" W '/sudo installer -pkg "dist\/stevedore-$V.pkg"/d'
 mutant "an on-target that tests the build, not the pkg" "does not install this run's pkg" W 's/STEVEDORE="$SD" STEVEDORE_BUILD/STEVEDORE_BUILD/'
-mutant "a packager that is not checked against the oracles" "does not run the oracles" W '/sh tests\/product-oracle-test.sh/d'
+mutant "a packager that is not checked against the oracles" "does not run the oracles" W '/product-oracle-test.sh/d'
+mutant "oracle tests taken from HEAD, not the pinned tag" "does not run the oracles" W 's|sh "$pinned/tests/product-oracle-test.sh"|sh tests/product-oracle-test.sh|'
+mutant "oracle tests from a tree other than the pinned tag's" "does not run the oracles" W 's|git archive "$(tr|git archive HEAD "$(tr|'
 mutant "the bootstrap reason kept" "still gives the bootstrap" I 's/for six reasons\. (1)/for six reasons. The packager cannot package itself before its first release. (1)/'
 mutant "the updater reason dropped" "does not name its macOS dependency" I 's/Sparkle updater is built there/Sparkle thing is built there/'
 mutant "the oracle comparison dropped from the deviation" "does not name its macOS dependency" I 's/build\/oracle-pkg.sh builds/the oracle builds/'
