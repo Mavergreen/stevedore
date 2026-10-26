@@ -78,6 +78,7 @@ for name in basic bundles; do
 done
 [ -d "$T/basic.x/Scripts" ] && same_tree "$T/scripts" "$T/basic.x/Scripts" "the Scripts of the basic pkg"
 
+mkdir "$T/elsewhere"
 np="--identifier x --version 1 --install-location /Library/Np --mtime $MT"
 "$SD" component --nopayload $np --scripts "$T/scripts" --out "$T/np.pkg" \
   && "$SD" toc "$T/np.pkg" > "$T/np.toc" && "$SD" expand "$T/np.pkg" "$T/np.x" || fail "stevedore component --nopayload with scripts exited $?"
@@ -89,8 +90,11 @@ same_tree "$T/scripts" "$T/np.x/Scripts" "the Scripts of the --nopayload pkg"
 "$SD" component --nopayload $np --out "$T/np0.pkg" && "$SD" toc "$T/np0.pkg" > "$T/np0.toc" || fail "stevedore component --nopayload without scripts exited $?"
 members="$(sed -n 's/^ *<name>\(.*\)<\/name>$/\1/p' "$T/np0.toc" | tr '\n' ' ')"
 [ "$members" = 'PackageInfo ' ] || fail "the scriptless --nopayload pkg holds '$members', not 'PackageInfo '"
+"$SD" expand "$T/np0.pkg" "$T/np0.x" && ! grep -q '<payload' "$T/np0.x/PackageInfo" || fail "the scriptless --nopayload PackageInfo has a payload element"
+(cd "$T/elsewhere" && umask 077 && TZ=Pacific/Kiritimati LC_ALL=C LANG=C "$SD" component --nopayload $np --scripts "$T/scripts" --out "$T/np.a")
+(umask 022 && TZ=America/New_York LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 "$SD" component --nopayload $np --scripts "$T/scripts" --out "$T/np.b" 2>/dev/null)
+cmp -s "$T/np.a" "$T/np.pkg" && cmp -s "$T/np.b" "$T/np.pkg" || fail "the --nopayload pkg changes with TZ, umask, LC_ALL or the current directory"
 
-mkdir "$T/elsewhere"
 (cd "$T/elsewhere" && umask 077 && TZ=Pacific/Kiritimati LC_ALL=C LANG=C pkg_of bundles "$SD" "$T/p.a")
 (umask 022 && TZ=America/New_York LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 pkg_of bundles "$SD" "$T/p.b" 2>/dev/null)
 cmp -s "$T/p.a" "$T/bundles.pkg" && cmp -s "$T/p.b" "$T/bundles.pkg" || fail "the pkg changes with TZ, umask, LC_ALL or the current directory"
