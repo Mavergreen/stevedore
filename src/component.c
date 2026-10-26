@@ -41,6 +41,7 @@ struct bundle {
 struct args {
 	const char *root, *id, *version, *location, *scripts, *out;
 	long mtime;
+	int nopayload;
 };
 
 struct found {
@@ -522,7 +523,7 @@ package_info(struct fp_buf *o, const struct args *a, const struct staged *s, con
 	    || (rc = attr(o, "install-location", a->location, "--install-location")) != 0
 	    || (rc = put(o, " auth=\"root\">\n")) != 0)
 		return rc;
-	if ((rc = payload_element(o, s->t.n, blocks / 2)) != 0)
+	if (!a->nopayload && (rc = payload_element(o, s->t.n, blocks / 2)) != 0)
 		return rc;
 	for (i = 0; i < f->n; i++) {
 		const struct bundle *b = &f->b[i];
@@ -573,7 +574,15 @@ parse_args(int argc, char **argv, struct args *a)
 	const char *v[7] = { NULL, NULL, NULL, NULL, NULL, NULL, NULL };
 	int i, j;
 
+	a->nopayload = 0;
 	for (i = 2; i < argc; i += 2) {
+		if (strcmp(argv[i], "--nopayload") == 0) {
+			if (a->nopayload)
+				return usage();
+			a->nopayload = 1;
+			i--;
+			continue;
+		}
 		for (j = 0; j < 7 && strcmp(argv[i], names[j]) != 0; j++)
 			;
 		if (j == 7 || i + 1 == argc || v[j] != NULL)
@@ -581,8 +590,10 @@ parse_args(int argc, char **argv, struct args *a)
 		v[j] = argv[i + 1];
 	}
 	for (j = 0; j < 7; j++)
-		if (j != 5 && (v[j] == NULL || *v[j] == '\0'))
+		if (j != 5 && (j == 0 ? a->nopayload != (v[0] == NULL) : v[j] == NULL || *v[j] == '\0'))
 			return usage();
+	if (v[0] != NULL && *v[0] == '\0')
+		return usage();
 	a->root = v[0];
 	a->id = v[1];
 	a->version = v[2];
@@ -642,20 +653,22 @@ fp_component(int argc, char **argv)
 	memset(&scripts, 0, sizeof scripts);
 	if ((rc = parse_args(argc, argv, &a)) != 0)
 		return rc;
-	if ((rc = stage(a.root, a.mtime, &root, 1)) != 0
+	if ((!a.nopayload && (rc = stage(a.root, a.mtime, &root, 1)) != 0)
 	    || (a.scripts != NULL && (rc = stage(a.scripts, a.mtime, &scripts, 0)) != 0)
-	    || (rc = fp_bom(&root.t, a.mtime, root.cpio.p, root.at, &bom)) != 0
+	    || (!a.nopayload && (rc = fp_bom(&root.t, a.mtime, root.cpio.p, root.at, &bom)) != 0)
 	    || (rc = discover(&root, &f)) != 0
 	    || (rc = package_info(&info, &a, &root, &f, a.scripts != NULL ? &scripts : NULL)) != 0)
 		goto out;
-	if (fp_gzip(root.cpio.p, root.cpio.len, &payload) != 0
+	if ((!a.nopayload && fp_gzip(root.cpio.p, root.cpio.len, &payload) != 0)
 	    || (a.scripts != NULL && fp_gzip(scripts.cpio.p, scripts.cpio.len, &sgz) != 0)) {
 		fputs("stevedore: gzip failed\n", stderr);
 		rc = 1;
 		goto out;
 	}
-	member(&e[n++], "Bom", &bom, FP_ENC_ZLIB);
-	member(&e[n++], "Payload", &payload, FP_ENC_NONE);
+	if (!a.nopayload) {
+		member(&e[n++], "Bom", &bom, FP_ENC_ZLIB);
+		member(&e[n++], "Payload", &payload, FP_ENC_NONE);
+	}
 	if (a.scripts != NULL)
 		member(&e[n++], "Scripts", &sgz, FP_ENC_NONE);
 	member(&e[n++], "PackageInfo", &info, FP_ENC_ZLIB);

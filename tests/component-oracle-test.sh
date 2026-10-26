@@ -106,6 +106,20 @@ expanded() {
     || fail "$name: assert_pkg_installs_in_place.sh rejects the stevedore pkg: $(tr '\n' '|' < "$T/inplace.err")"
 }
 
+nopayload() {
+  name="nopayload${1:+.scripts}"
+  id="dev.mavergreen.stevedore-test.$$.$name"
+  "$SD" component --nopayload --identifier "$id" --version 1.0 --install-location "$S/$name" --mtime "$MT" ${1:+--scripts "$1"} --out "$T/$name.sd.pkg" \
+    || { fail "stevedore component --nopayload $name exited $?"; return 1; }
+  pkgbuild --quiet --nopayload --identifier "$id" --version 1.0 --install-location "$S/$name" ${1:+--scripts "$1"} "$T/$name.pb.pkg" \
+    || { fail "pkgbuild --nopayload $name failed"; return 1; }
+  for k in sd pb; do
+    pkgutil --expand "$T/$name.$k.pkg" "$T/$name.$k" || { fail "pkgutil --expand rejects the $k $name pkg"; return 1; }
+  done
+  same_component "$name" "$T/$name.pb" "$T/$name.sd"
+  ! grep -q '<payload' "$T/$name.sd/PackageInfo" || fail "$name: the PackageInfo has a payload element"
+}
+
 installed() {
   name="$1"; k="$2"
   id="dev.mavergreen.stevedore-test.$$.$name"
@@ -135,6 +149,8 @@ expanded basic --scripts "$T/scripts" || :
 expanded many || :
 expanded bundles || :
 expanded fat || :
+nopayload "$T/scripts" || :
+nopayload || :
 
 [ "$sudo" -eq 1 ] || {
   [ "$fails" -eq 0 ] || { echo "component-oracle-test: $fails failure(s)" >&2; exit 1; }

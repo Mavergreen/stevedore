@@ -102,6 +102,7 @@ same_component() {
   (cd "$2" && find . | LC_ALL=C sort) > "$T/pb.list"
   (cd "$3" && find . | LC_ALL=C sort) > "$T/sd.list"
   cmp -s "$T/pb.list" "$T/sd.list" || fail "$1: the expanded pkgs hold other names: $(diff "$T/pb.list" "$T/sd.list" | tr '\n' '|')"
+  if [ -e "$2/Bom" ] || [ -e "$3/Bom" ]; then
   for o in "-p MUGsTfc" "" "-s"; do
     TZ=UTC lsbom $o "$2/Bom" > "$T/pb.out"
     TZ=UTC lsbom $o "$3/Bom" > "$T/sd.out"
@@ -110,6 +111,7 @@ same_component() {
   gzip -dc < "$2/Payload" | TZ=UTC cpio -itv 2>/dev/null | LC_ALL=C sort > "$T/pb.out"
   gzip -dc < "$3/Payload" | TZ=UTC cpio -itv 2>/dev/null | LC_ALL=C sort > "$T/sd.out"
   cmp -s "$T/pb.out" "$T/sd.out" || fail "$1: the payload listings differ: $(diff "$T/pb.out" "$T/sd.out" | head -6 | tr '\n' '|')"
+  fi
   if [ -d "$2/Scripts" ]; then
     (cd "$2/Scripts" && find . -exec stat -f '%Sp %z %m %N%SY' {} + | sed 's/^\([^ ]* [^ ]*\) [0-9]* \.$/\1 ./' | LC_ALL=C sort && find . -type f -exec cksum {} + | LC_ALL=C sort) > "$T/pb.out"
     (cd "$3/Scripts" && find . -exec stat -f '%Sp %z %m %N%SY' {} + | sed 's/^\([^ ]* [^ ]*\) [0-9]* \.$/\1 ./' | LC_ALL=C sort && find . -type f -exec cksum {} + | LC_ALL=C sort) > "$T/sd.out"

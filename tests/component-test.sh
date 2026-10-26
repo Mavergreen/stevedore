@@ -78,6 +78,18 @@ for name in basic bundles; do
 done
 [ -d "$T/basic.x/Scripts" ] && same_tree "$T/scripts" "$T/basic.x/Scripts" "the Scripts of the basic pkg"
 
+np="--identifier x --version 1 --install-location /Library/Np --mtime $MT"
+"$SD" component --nopayload $np --scripts "$T/scripts" --out "$T/np.pkg" \
+  && "$SD" toc "$T/np.pkg" > "$T/np.toc" && "$SD" expand "$T/np.pkg" "$T/np.x" || fail "stevedore component --nopayload with scripts exited $?"
+members="$(sed -n 's/^ *<name>\(.*\)<\/name>$/\1/p' "$T/np.toc" | tr '\n' ' ')"
+[ "$members" = 'Scripts PackageInfo ' ] || fail "the --nopayload pkg holds '$members', not 'Scripts PackageInfo '"
+! grep -q '<payload' "$T/np.x/PackageInfo" || fail "the --nopayload PackageInfo has a payload element"
+grep -q '<postinstall file="./postinstall" timeout="600"/>' "$T/np.x/PackageInfo" || fail "the --nopayload PackageInfo does not name the postinstall"
+same_tree "$T/scripts" "$T/np.x/Scripts" "the Scripts of the --nopayload pkg"
+"$SD" component --nopayload $np --out "$T/np0.pkg" && "$SD" toc "$T/np0.pkg" > "$T/np0.toc" || fail "stevedore component --nopayload without scripts exited $?"
+members="$(sed -n 's/^ *<name>\(.*\)<\/name>$/\1/p' "$T/np0.toc" | tr '\n' ' ')"
+[ "$members" = 'PackageInfo ' ] || fail "the scriptless --nopayload pkg holds '$members', not 'PackageInfo '"
+
 mkdir "$T/elsewhere"
 (cd "$T/elsewhere" && umask 077 && TZ=Pacific/Kiritimati LC_ALL=C LANG=C pkg_of bundles "$SD" "$T/p.a")
 (umask 022 && TZ=America/New_York LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 pkg_of bundles "$SD" "$T/p.b" 2>/dev/null)
@@ -146,6 +158,10 @@ done
 refused "$T/nonexistent" --root "$T/nonexistent" $ok
 refused "not a directory" --root "$T/ro/out" $ok
 refused "$T/noscripts" --root "$T/basic" --scripts "$T/noscripts" $ok
+refused '' --nopayload --root "$T/basic" $ok
+refused '' --nopayload --nopayload $ok
+refused '' --nopayload --identifier x --version 1 --install-location / --out "$T/bad.pkg"
+refused "$T/noscripts" --nopayload --scripts "$T/noscripts" $ok
 
 mkdir "$T/hl" "$T/hl/d"
 echo one > "$T/hl/a"
