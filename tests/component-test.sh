@@ -79,6 +79,23 @@ done
 [ -d "$T/basic.x/Scripts" ] && same_tree "$T/scripts" "$T/basic.x/Scripts" "the Scripts of the basic pkg"
 
 mkdir "$T/elsewhere"
+
+mkdir "$T/ad" "$T/ad/x" "$T/ad/z" "$T/ad0" "$T/ad0/x" "$T/ad0/z" "$T/adscripts" "$T/ad0scripts"
+echo a > "$T/ad/x/f"; echo a > "$T/ad0/x/f"
+echo b > "$T/ad/x/._f"; echo c > "$T/ad/._top"; echo d > "$T/ad/z/._only"
+mkdir "$T/ad/x/._dir"; echo e > "$T/ad/x/._dir/g"
+cp "$T/scripts/postinstall" "$T/adscripts/postinstall"; cp "$T/scripts/postinstall" "$T/ad0scripts/postinstall"
+echo j > "$T/adscripts/._junk"; echo k > "$T/adscripts/._postinstall"
+find "$T/ad" "$T/ad0" "$T/adscripts" "$T/ad0scripts" -exec env TZ=UTC touch -h -t 202301011200 {} +
+adargs="--identifier x --version 1 --install-location / --mtime $MT"
+"$SD" component --root "$T/ad" $adargs --scripts "$T/adscripts" --out "$T/ad.pkg" \
+  && "$SD" component --root "$T/ad0" $adargs --scripts "$T/ad0scripts" --out "$T/ad0.pkg" \
+  || fail "stevedore component of the AppleDouble trees exited $?"
+cmp -s "$T/ad.pkg" "$T/ad0.pkg" || fail "the pkg differs with and without AppleDouble files in the root and scripts"
+"$SD" payload --root "$T/ad" --mtime "$MT" --out "$T/ad.payload" && "$SD" payload --root "$T/ad0" --mtime "$MT" --out "$T/ad0.payload" \
+  && cmp -s "$T/ad.payload" "$T/ad0.payload" || fail "stevedore payload differs with and without AppleDouble files"
+"$SD" bom --root "$T/ad" --mtime "$MT" --out "$T/ad.bom" && "$SD" bom --root "$T/ad0" --mtime "$MT" --out "$T/ad0.bom" \
+  && cmp -s "$T/ad.bom" "$T/ad0.bom" || fail "stevedore bom differs with and without AppleDouble files"
 np="--identifier x --version 1 --install-location /Library/Np --mtime $MT"
 "$SD" component --nopayload $np --scripts "$T/scripts" --out "$T/np.pkg" \
   && "$SD" toc "$T/np.pkg" > "$T/np.toc" && "$SD" expand "$T/np.pkg" "$T/np.x" || fail "stevedore component --nopayload with scripts exited $?"

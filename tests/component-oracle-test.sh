@@ -72,6 +72,13 @@ basic_tree "$T/basic"
 many_tree "$T/many"
 bundles_tree "$T/bundles" "$FX/plist/app.binary1.plist"
 scripts_tree "$T/scripts"
+mkdir "$T/appledouble" "$T/appledouble/x" "$T/appledouble/z" "$T/appledouble0" "$T/appledouble0/x" "$T/appledouble0/z" "$T/appledouble.s" "$T/appledouble0.s"
+echo a > "$T/appledouble/x/f"; echo a > "$T/appledouble0/x/f"
+echo b > "$T/appledouble/x/._f"; echo c > "$T/appledouble/._top"; echo d > "$T/appledouble/z/._only"
+mkdir "$T/appledouble/x/._dir"; echo e > "$T/appledouble/x/._dir/g"
+for d in appledouble.s appledouble0.s; do printf '#!/bin/sh\nexit 0\n' > "$T/$d/postinstall"; chmod 755 "$T/$d/postinstall"; done
+echo j > "$T/appledouble.s/._junk"; echo k > "$T/appledouble.s/._postinstall"
+find "$T/appledouble" "$T/appledouble0" "$T/appledouble.s" "$T/appledouble0.s" -exec env TZ=UTC touch -h -t 202301011200 {} +
 basic_tree "$T/fat"
 mkdir "$T/fat/bin"
 fat_macho "$T/fat/bin/synthetic"
@@ -104,6 +111,20 @@ expanded() {
     || fail "$name: generator-version is not stevedore-<version>"
   sh "$SHIPYARD_SCRIPTS/assert_pkg_installs_in_place.sh" "$T/$name.sd.pkg" >/dev/null 2>"$T/inplace.err" \
     || fail "$name: assert_pkg_installs_in_place.sh rejects the stevedore pkg: $(tr '\n' '|' < "$T/inplace.err")"
+}
+
+clean_appledouble() {
+  name=appledouble
+  id="dev.mavergreen.stevedore-test.$$.$name"
+  "$SD" component --root "$T/$name" --identifier "$id" --version 1.0 --install-location "$S/$name" --mtime "$MT" --scripts "$T/$name.s" --out "$T/$name.sd.pkg" \
+    || { fail "stevedore component of the $name tree exited $?"; return 1; }
+  sh "$SHIPYARD_SCRIPTS/build_component_pkg.sh" --root "$T/${name}0" --identifier "$id" --version 1.0 --install-location "$S/$name" \
+    --scripts "$T/${name}0.s" --out "$T/$name.pb.pkg" >/dev/null 2>"$T/$name.pb.err" \
+    || { fail "build_component_pkg.sh of the clean $name tree failed: $(tr '\n' '|' < "$T/$name.pb.err")"; return 1; }
+  for k in sd pb; do
+    pkgutil --expand "$T/$name.$k.pkg" "$T/$name.$k" || { fail "pkgutil --expand rejects the $k $name pkg"; return 1; }
+  done
+  same_component "$name" "$T/$name.pb" "$T/$name.sd"
 }
 
 nopayload() {
@@ -149,6 +170,7 @@ expanded basic --scripts "$T/scripts" || :
 expanded many || :
 expanded bundles || :
 expanded fat || :
+clean_appledouble || :
 nopayload "$T/scripts" || :
 nopayload || :
 

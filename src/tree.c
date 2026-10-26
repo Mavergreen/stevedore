@@ -116,7 +116,8 @@ walk(struct fp_tree *t, const char *dir, const char *rel, size_t idx)
 		return fail("cannot read directory", rel);
 	errno = 0;
 	while ((de = readdir(d)) != NULL) {
-		if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+		if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0
+		    || strncmp(de->d_name, "._", 2) == 0)
 			continue;
 		if (n == cap) {
 			nn = realloc(names, (cap ? cap * 2 : 16) * sizeof *names);
