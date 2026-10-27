@@ -155,7 +155,7 @@ package_info(struct component *c)
 		c->id = fp_xml_get(root, "identifier");
 		c->version = fp_xml_get(root, "version");
 		payload = child_named(root, "payload", NULL);
-		c->kbytes = payload != NULL ? fp_xml_get(payload, "installKBytes") : NULL;
+		c->kbytes = payload != NULL ? fp_xml_get(payload, "installKBytes") : c->have[2] ? NULL : "0";
 		if (strcmp(root->name, "pkg-info") != 0 || c->id == NULL || *c->id == '\0' || c->version == NULL
 		    || *c->version == '\0' || !digits(c->kbytes)) {
 			fprintf(stderr, "stevedore: %s: not a pkg-info with an identifier, a version and a payload's installKBytes\n",
@@ -198,8 +198,8 @@ read_component(struct component *c)
 		rc = fp_xar_extract(&x, i, buf_sink, &c->data[k]);
 	}
 	fp_xar_free(&x);
-	if (rc == 0 && !(c->have[0] && c->have[2] && c->have[3])) {
-		fprintf(stderr, "stevedore: %s: a component needs a PackageInfo, a Payload and a Bom\n", c->path);
+	if (rc == 0 && !(c->have[0] && c->have[2] == c->have[3])) {
+		fprintf(stderr, "stevedore: %s: a component needs a PackageInfo, and a Payload and a Bom together or neither\n", c->path);
 		rc = 2;
 	}
 	if (rc == 0)

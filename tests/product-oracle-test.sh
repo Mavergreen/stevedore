@@ -100,6 +100,24 @@ if [ -f "$T/fx.pb.pkg" ] && [ -f "$T/fx.sd.pkg" ]; then
   canon "$T/fx.dist" | cmp -s - "$T/pb.canon" || fail "tests/fixtures/product/Distribution is not productbuild's beyond bundle order, updateKBytes and oracle_reconcile"
 fi
 
+mkdir "$T/np" "$T/np.pb" "$T/np.sd"
+for k in "" -noscripts; do
+  sc="--scripts $T/s/product-scripts"; [ -z "$k" ] || sc=""
+  pkgbuild --nopayload --identifier dev.mavergreen.stevedore-test.product --version 2.0 --install-location "/Library/Stevedore Test/product" $sc \
+    "$T/np.pb/product.pkg" >/dev/null || fail "pkgbuild --nopayload$k failed"
+  cp "$T/s/pkgs/mavergreen-base.pkg" "$T/np.pb/"
+  "$SD" component --nopayload --identifier dev.mavergreen.stevedore-test.product --version 2.0 --install-location "/Library/Stevedore Test/product" $sc \
+    --mtime "$MT" --out "$T/np.sd/product.pkg" || fail "stevedore component --nopayload$k exited $?"
+  cp "$T/s/pkgs/mavergreen-base.pkg" "$T/np.sd/"
+  "$PRODUCTBUILD" --distribution "$T/s/distribution.xml" --resources "$T/s/res" --package-path "$T/np.pb" "$T/np$k.pb.pkg" >/dev/null \
+    || fail "productbuild of the --nopayload$k component failed"
+  "$SD" product --distribution "$T/s/distribution.xml" --package "$T/np.sd/mavergreen-base.pkg" --package "$T/np.sd/product.pkg" \
+    --resources "$T/s/res" --mtime "$MT" --out "$T/np$k.sd.pkg" || fail "stevedore product of the --nopayload$k component exited $?"
+  if [ -f "$T/np$k.pb.pkg" ] && [ -f "$T/np$k.sd.pkg" ]; then
+    SAME_COMPONENTS=1 same_products "--nopayload$k component" "$T/np$k.pb.pkg" "$T/np$k.sd.pkg" || :
+  fi
+done
+
 [ "$sudo" -eq 1 ] || {
   [ "$fails" -eq 0 ] || { echo "product-oracle-test: $fails failure(s)" >&2; exit 1; }
   echo "product-oracle-test: SKIP the install comparison (no passwordless sudo)"; exit 77

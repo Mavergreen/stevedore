@@ -175,5 +175,30 @@ mkdir "$T/noinfo"
 "$SD" xar --mtime "$MT" --out "$T/noinfo/product.pkg" zlib Bom "$s/res/license.txt"
 refused "PackageInfo" --distribution "$s/distribution.xml" --package "$s/pkgs/mavergreen-base.pkg" --package "$T/noinfo/product.pkg" $out
 
+mkdir "$T/np" "$T/np0"
+npid=dev.mavergreen.stevedore-test.product
+for k in np np0; do
+  sc="--scripts $s/product-scripts"; [ "$k" = np ] || sc=""
+  "$SD" component --nopayload --identifier "$npid" --version 2.0 --install-location "/Library/Stevedore Test/product" $sc \
+    --mtime "$MT" --out "$T/$k/product.pkg" || fail "stevedore component --nopayload of the $k pkg exited $?"
+  "$SD" product --distribution "$s/distribution.xml" --package "$s/pkgs/mavergreen-base.pkg" --package "$T/$k/product.pkg" \
+    --resources "$s/res" --mtime "$MT" --out "$T/$k.prod.pkg" \
+    && "$SD" toc "$T/$k.prod.pkg" > "$T/$k.prod.toc" && "$SD" expand "$T/$k.prod.pkg" "$T/$k.prod.x" \
+    || { fail "stevedore product of a --nopayload component ($k) exited $?"; continue; }
+  members="$(sed -n 's/^ *<name>\(.*\)<\/name>$/\1/p' "$T/$k.prod.toc" | sed -n '/^product.pkg$/,/^mavergreen-base.pkg$/p' | tr '\n' ' ')"
+  want='product.pkg PackageInfo Scripts mavergreen-base.pkg '; [ "$k" = np ] || want='product.pkg PackageInfo mavergreen-base.pkg '
+  [ "$members" = "$want" ] || fail "the product holds '$members' for the $k component, not '$want'"
+  grep -q 'installKBytes="0"[^>]*>#product.pkg<' "$T/$k.prod.x/Distribution" \
+    || fail "the Distribution does not give the $k component installKBytes=\"0\": $(grep 'product.pkg' "$T/$k.prod.x/Distribution")"
+  "$SD" expand "$T/$k/product.pkg" "$T/$k.c.x" && same_tree "$T/$k.c.x" "$T/$k.prod.x/product.pkg" "the $k component in the product"
+done
+"$SD" expand "$s/pkgs/product.pkg" "$T/half.x"
+mkdir "$T/half"
+for k in Payload Bom; do
+  o=Bom; [ "$k" = Bom ] && o=Payload
+  "$SD" xar --mtime "$MT" --out "$T/half/product.pkg" zlib PackageInfo "$T/half.x/PackageInfo" none $k "$T/half.x/$k"
+  refused "a Payload and a Bom together" --distribution "$s/distribution.xml" --package "$s/pkgs/mavergreen-base.pkg" --package "$T/half/product.pkg" $out
+done
+
 [ "$fails" -eq 0 ] || { echo "product-test: $fails failure(s)" >&2; exit 1; }
 echo "product-test: ok"
