@@ -6,7 +6,7 @@
 #   mavericks-vm and runs every suite against the stevedore it installed; both run once per same-repo PR head
 #   (its branch push), and on a fork's or Renovate's PR; the Linux tarball is
 #   opt/mavergreen/stevedore/ alone and passes shipyard's product-archive reader; no run: block holds ${{ }}; no
-#   job anywhere runs on a macOS runner without a macos-runner:<job> deviation; and an ingredient in INGREDIENTS.md's
+#   job anywhere runs on a macOS runner without a macos-runner:<workflow>:<job> deviation; and an ingredient in INGREDIENTS.md's
 #   Declared state is exactly what repackage-on-ingredient-bump.yml watches. Each check is shown to refuse a
 #   mutated copy. The package job also builds the Sparkle updater into the pkg and signs it, and a key scan precedes
 #   publish. The package job runs the pkgbuild and productbuild oracles with the pinned stevedore before it packages
@@ -108,9 +108,9 @@ shape() {
     /^ *(- )?run:/ { ri = ind($0); r = 1; if (index($0, "${{")) print NR ": " $0 }' "$1")"
   [ -z "$_run" ] || { echo "a run: block holds \${{ }}: $_run"; return 1; }
   for _j in $(macos_jobs "$1" "$4"); do
-    grep -q "^- macos-runner:$_j: ." "$3" || { echo "the $_j job runs on macOS with no macos-runner:$_j deviation"; return 1; }
+    grep -q "^- macos-runner:[^:]*\.yml:$_j: ." "$3" || { echo "the $_j job runs on macOS with no macos-runner:<workflow>:$_j deviation"; return 1; }
   done
-  _pkgdev="$(sed -n 's/^- macos-runner:package: //p' "$3")"
+  _pkgdev="$(sed -n 's/^- macos-runner:release.yml:package: //p' "$3")"
   case "$_pkgdev" in *ootstrap*|*"before its first release"*|*"pkgbuild and productbuild through"*) echo "macos-runner:package still gives the bootstrap as a reason"; return 1 ;; esac
   for _r in "arm64 slice" "Sparkle updater" PlistBuddy "pkgutil --expand-full" "build/oracle-pkg.sh" Installer; do
     case "$_pkgdev" in *"$_r"*) ;; *) echo "macos-runner:package does not name its macOS dependency [$_r]"; return 1 ;; esac
@@ -174,8 +174,8 @@ mutant "a vm-test guest with shipyard's scripts alone" "the vm-test job does not
 mutant "a vm-test guest pointed at the old scripts copy" "the vm-test job does not give the 10.9 guest" C 's|SHIPYARD_SCRIPTS="$PWD/.shipyard/scripts"|SHIPYARD_SCRIPTS="$PWD/.shipyard-scripts"|'
 mutant "an unchecked tarball" "is not checked" W '/python3 "$SHIPYARD_SCRIPTS\/product-tar.py"/d'
 mutant "\${{ }} in a run: block" 'a run: block holds' W 's/^          set -eu$/          echo "${{ github.event.head_commit.message }}"/'
-mutant "an undeclared macOS job" "no macos-runner:on-target deviation" W '/^  on-target:$/,/^  publish:$/s/runs-on: ubuntu-latest/runs-on: macos-26/'
-mutant "a dropped macOS deviation" "no macos-runner:package deviation" I '/^- macos-runner:package:/d'
+mutant "an undeclared macOS job" "no macos-runner:<workflow>:on-target deviation" W '/^  on-target:$/,/^  publish:$/s/runs-on: ubuntu-latest/runs-on: macos-26/'
+mutant "a dropped macOS deviation" "no macos-runner:<workflow>:package deviation" I '/^- macos-runner:release.yml:package:/d'
 mutant "an unwatched ingredient" "not the declared ingredients" R '/components\/clang22\/sha256/d'
 mutant "a declared ingredient the trigger misses" "not the declared ingredients" I 's/^- zlib: components\/zlib\/version$/&\
 - extra: components\/extra\/version/'
